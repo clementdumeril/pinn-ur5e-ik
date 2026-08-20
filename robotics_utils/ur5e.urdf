@@ -1,0 +1,70 @@
+<?xml version="1.0" ?>
+<robot name="ur5e">
+  <link name="base_link">
+    <visual>
+      <geometry>
+        <cylinder length="0.1625" radius="0.06"/>
+      </geometry>
+    </visual>
+  </link>
+
+  <joint name="shoulder_pan_joint" type="revolute">
+    <parent link="base_link"/>
+    <child link="shoulder_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.1625"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="150"/>
+  </joint>
+
+  <link name="shoulder_link"/>
+
+  <joint name="shoulder_lift_joint" type="revolute">
+    <parent link="shoulder_link"/>
+    <child link="upper_arm_link"/>
+    <origin rpy="0.0 1.57079632679 0.0" xyz="0.0 0.1333 0.0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="150"/>
+  </joint>
+
+  <link name="upper_arm_link"/>
+
+  <joint name="elbow_joint" type="revolute">
+    <parent link="upper_arm_link"/>
+    <child link="forearm_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.425 0.0 0.0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="150"/>
+  </joint>
+
+  <link name="forearm_link"/>
+
+  <joint name="wrist_1_joint" type="revolute">
+    <parent link="forearm_link"/>
+    <child link="wrist_1_link"/>
+    <origin rpy="0.0 1.57079632679 0.0" xyz="0.3922 0.0 0.0"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="50"/>
+  </joint>
+
+  <link name="wrist_1_link"/>
+
+  <joint name="wrist_2_joint" type="revolute">
+    <parent link="wrist_1_link"/>
+    <child link="wrist_2_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0997 0.0"/>
+    <axis xyz="0 0 1"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="50"/>
+  </joint>
+
+  <link name="wrist_2_link"/>
+
+  <joint name="wrist_3_joint" type="revolute">
+    <parent link="wrist_2_link"/>
+    <child link="tool_link"/>
+    <origin rpy="0.0 0.0 0.0" xyz="0.0 0.0 0.0996"/>
+    <axis xyz="0 1 0"/>
+    <limit lower="-3.14159" upper="3.14159" velocity="3.14" effort="50"/>
+  </joint>
+
+  <link name="tool_link"/>
+</robot>

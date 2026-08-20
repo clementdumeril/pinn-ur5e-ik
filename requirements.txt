@@ -1,0 +1,23 @@
+# --- Noyau : calcul scientifique et reseau de neurones ---
+numpy>=1.20.0
+scipy>=1.7.0
+matplotlib>=3.4.0
+torch>=1.9.0
+
+# --- Cinematique ---
+# ikpy : solveur IK numerique de reference (robotics_utils/ikpy_ur5e_solver.py)
+ikpy>=3.3
+
+# --- Vision par ordinateur ---
+# scikit-image : requis par ur5.py (skimage.transform.resize)
+scikit-image>=0.19
+# tensorflow : chargement du modele VGG16 (computer_vision/vgg16.h5).
+# Sans lui, ur5.py bascule silencieusement sur la position donnee par le
+# superviseur Webots -- la simulation tourne, mais sans la brique vision.
+tensorflow>=2.10
+# opencv-python : capture d'images du controleur data_collector
+opencv-python>=4.5
+
+# --- Webots ---
+# Le module `controller` est fourni par l'installation de Webots
+# (Webots R2023a ou superieur), il ne s'installe pas via pip.

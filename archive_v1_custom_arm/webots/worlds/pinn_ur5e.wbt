@@ -1,0 +1,295 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
+
+WorldInfo {
+  basicTimeStep 16
+  coordinateSystem "ENU"
+  contactProperties [
+    ContactProperties {
+      material1 "finger_mat"
+      material2 "box_mat"
+      coulombFriction [ 3.0 ]
+      bounce 0.0
+    }
+    ContactProperties {
+      material1 "default"
+      material2 "box_mat"
+      coulombFriction [ 0.8 ]
+      bounce 0.0
+    }
+    ContactProperties {
+      material1 "finger_mat"
+      material2 "default"
+      coulombFriction [ 1.0 ]
+    }
+  ]
+}
+
+Viewpoint {
+  fieldOfView 0.83
+  orientation 0.18 -0.22 -0.96 2.15
+  position 1.8 1.4 1.4
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+DirectionalLight {
+  direction 0 0 -1
+  intensity 3
+  castShadows FALSE
+}
+
+PointLight {
+  location 0.50 0 1.5
+  intensity 5
+  attenuation 0 0 1
+}
+
+# ===================== Sol =====================
+Solid {
+  name "floor"
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.8 0.8
+        roughness 0.8
+      }
+      geometry Plane {
+        size 10 10
+      }
+    }
+  ]
+  boundingObject Plane {
+    size 10 10
+  }
+}
+
+# ===================== Socle du UR5e (Hauteur 0.45m) =====================
+Solid {
+  name "pedestal"
+  translation 0 0 0.225
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.25 0.25 0.28
+        roughness 0.4
+        metalness 0.8
+      }
+      geometry Box {
+        size 0.26 0.26 0.45
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.26 0.26 0.45
+  }
+}
+
+# ===================== Table de travail (x = 0.50m, hauteur 0.30m) =====================
+Solid {
+  name "table"
+  translation 0.50 0 0.15
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.55 0.4 0.28
+        roughness 0.6
+      }
+      geometry Box {
+        size 0.50 0.50 0.30
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.50 0.50 0.30
+  }
+}
+
+# ===================== Bac de dépôt (bleu, x = 0.50, y = -0.10, z = 0.31) =====================
+Solid {
+  name "tray"
+  translation 0.50 -0.10 0.31
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.3 0.8
+        roughness 0.4
+      }
+      geometry Box {
+        size 0.14 0.14 0.02
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.14 0.14 0.02
+  }
+}
+
+# ===================== Cube rouge à saisir (x = 0.50, y = 0.10, z = 0.32) =====================
+DEF RED_BOX Solid {
+  name "RED_BOX"
+  translation 0.50 0.10 0.32
+  contactMaterial "box_mat"
+  children [
+    DEF BOX_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.05 0.05
+        roughness 0.3
+        metalness 0
+      }
+      geometry Box {
+        size 0.04 0.04 0.04
+      }
+    }
+  ]
+  boundingObject USE BOX_SHAPE
+  physics Physics {
+    density -1
+    mass 0.04
+  }
+}
+
+# ===================== Caméra fixe au-dessus de la table =====================
+Robot {
+  name "OverheadCamera"
+  controller "<none>"
+  children [
+    Camera {
+      name "overhead_camera"
+      translation 0.50 0 1.20
+      rotation 0 1 0 1.5708
+      fieldOfView 0.9
+      width 320
+      height 240
+    }
+  ]
+}
+
+# ==========================================================================
+#  UR5e — bras monté à z = 0.45 m sur le socle ergonomique
+#  toolSlot : pince 2 doigts avec corps rigide physique
+# ==========================================================================
+UR5e {
+  name "UR5e"
+  translation 0 0 0.45
+  controller "pinn_ur5e_controller"
+  supervisor TRUE
+  toolSlot [
+    DEF END_EFFECTOR Solid {
+      name "end_effector"
+      children [
+        # Corps principal de la pince
+        Solid {
+          name "gripper_body"
+          translation 0 0 0.025
+          children [
+            Shape {
+              appearance DEF GRIPPER_METAL PBRAppearance {
+                baseColor 0.20 0.20 0.22
+                roughness 0.3
+                metalness 0.9
+              }
+              geometry Box {
+                size 0.07 0.07 0.05
+              }
+            }
+          ]
+          boundingObject Box {
+            size 0.07 0.07 0.05
+          }
+        }
+        # Caméra de poignet
+        Camera {
+          name "camera"
+          translation 0 0 0.05
+          rotation 1 0 0 1.5708
+          fieldOfView 0.8
+          width 320
+          height 240
+        }
+        # ---- Doigt gauche (glissière le long de Y) ----
+        SliderJoint {
+          jointParameters JointParameters {
+            axis 0 1 0
+          }
+          device [
+            LinearMotor {
+              name "gripper_left"
+              minPosition 0.0
+              maxPosition 0.02
+              maxForce 50
+            }
+          ]
+          endPoint DEF FINGER_L Solid {
+            name "finger_left"
+            translation 0 -0.035 0.075
+            contactMaterial "finger_mat"
+            children [
+              Shape {
+                appearance USE GRIPPER_METAL
+                geometry Box {
+                  size 0.05 0.015 0.05
+                }
+              }
+            ]
+            boundingObject Box {
+              size 0.05 0.015 0.05
+            }
+            physics Physics {
+              density -1
+              mass 0.03
+            }
+          }
+        }
+        # ---- Doigt droit (glissière le long de Y) ----
+        SliderJoint {
+          jointParameters JointParameters {
+            axis 0 1 0
+          }
+          device [
+            LinearMotor {
+              name "gripper_right"
+              minPosition -0.02
+              maxPosition 0.0
+              maxForce 50
+            }
+          ]
+          endPoint DEF FINGER_R Solid {
+            name "finger_right"
+            translation 0 0.035 0.075
+            contactMaterial "finger_mat"
+            children [
+              Shape {
+                appearance USE GRIPPER_METAL
+                geometry Box {
+                  size 0.05 0.015 0.05
+                }
+              }
+            ]
+            boundingObject Box {
+              size 0.05 0.015 0.05
+            }
+            physics Physics {
+              density -1
+              mass 0.03
+            }
+          }
+        }
+      ]
+      boundingObject Box {
+        size 0.07 0.07 0.05
+      }
+      physics Physics {
+        density -1
+        mass 0.3
+      }
+    }
+  ]
+}

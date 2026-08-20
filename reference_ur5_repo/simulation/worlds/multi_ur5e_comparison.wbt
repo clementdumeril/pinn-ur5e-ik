@@ -1,0 +1,207 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/appearances/protos/Parquetry.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/tables/protos/Table.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+
+WorldInfo {
+  basicTimeStep 16
+  coordinateSystem "ENU"
+}
+
+Viewpoint {
+  orientation -0.25 -0.15 0.95 3.85
+  position 1.2 0.0 4.2
+}
+
+TexturedBackground {
+  texture "factory"
+}
+
+TexturedBackgroundLight {
+  luminosity 0.7
+}
+
+RectangleArena {
+  floorSize 12 12
+  floorTileSize 2 2
+  floorAppearance Parquetry {
+    type "light strip"
+  }
+  wallHeight 1.2
+}
+
+# ==========================================================================
+#  POSTE 1 (HAUT, Y = +1.2m) — ROBOT A : OPTION A (Trigo / DH Analytique)
+# ==========================================================================
+UR5e {
+  name "UR5e_OptionA"
+  translation -2.28 1.20 0.9
+  rotation 0 0 -1 -1.570795
+  controller "multi_controller"
+  supervisor TRUE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+    Camera {
+      name "camera"
+      translation 0 0 0.05
+      rotation 1 0 0 1.5708
+      fieldOfView 0.8
+      width 256
+      height 256
+    }
+  ]
+}
+
+DEF RED_BOX_A Solid {
+  name "RED_BOX_A"
+  translation -1.55 1.45 0.92
+  children [
+    DEF RED_SHAPE Shape {
+      appearance PBRAppearance { baseColor 0.9 0.05 0.05 roughness 0.3 }
+      geometry Box { size 0.04 0.04 0.04 }
+    }
+  ]
+  boundingObject USE RED_SHAPE
+  physics Physics { density -1 mass 0.04 }
+}
+
+DEF BLUE_TRAY_A Solid {
+  name "BLUE_TRAY_A"
+  translation -1.55 0.95 0.91
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.1 0.3 0.8 roughness 0.4 }
+      geometry Box { size 0.16 0.16 0.02 }
+    }
+  ]
+  boundingObject Box { size 0.16 0.16 0.02 }
+}
+
+Table {
+  name "table1_A"
+  translation -1.5 1.20 0
+  size 0.8 1.4 0.9
+}
+Table {
+  name "table2_A"
+  translation -2.42 1.20 0
+  size 0.8 1.4 0.9
+}
+
+# ==========================================================================
+#  POSTE 2 (CENTRE, Y = 0.0m) — ROBOT B : OPTION B (Lie Algebra SE3 PoE)
+# ==========================================================================
+UR5e {
+  name "UR5e_OptionB"
+  translation -2.28 0.00 0.9
+  rotation 0 0 -1 -1.570795
+  controller "multi_controller"
+  supervisor TRUE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+    Camera {
+      name "camera"
+      translation 0 0 0.05
+      rotation 1 0 0 1.5708
+      fieldOfView 0.8
+      width 256
+      height 256
+    }
+  ]
+}
+
+DEF RED_BOX_B Solid {
+  name "RED_BOX_B"
+  translation -1.55 0.25 0.92
+  children [
+    USE RED_SHAPE
+  ]
+  boundingObject USE RED_SHAPE
+  physics Physics { density -1 mass 0.04 }
+}
+
+DEF BLUE_TRAY_B Solid {
+  name "BLUE_TRAY_B"
+  translation -1.55 -0.25 0.91
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.1 0.8 0.2 roughness 0.4 }
+      geometry Box { size 0.16 0.16 0.02 }
+    }
+  ]
+  boundingObject Box { size 0.16 0.16 0.02 }
+}
+
+Table {
+  name "table1_B"
+  translation -1.5 0.00 0
+  size 0.8 1.4 0.9
+}
+Table {
+  name "table2_B"
+  translation -2.42 0.00 0
+  size 0.8 1.4 0.9
+}
+
+# ==========================================================================
+#  POSTE 3 (BAS, Y = -1.2m) — ROBOT C : OPTION C (Réseau de Neurones PINN)
+# ==========================================================================
+UR5e {
+  name "UR5e_OptionC"
+  translation -2.28 -1.20 0.9
+  rotation 0 0 -1 -1.570795
+  controller "multi_controller"
+  supervisor TRUE
+  toolSlot [
+    Robotiq3fGripper {
+    }
+    Camera {
+      name "camera"
+      translation 0 0 0.05
+      rotation 1 0 0 1.5708
+      fieldOfView 0.8
+      width 256
+      height 256
+    }
+  ]
+}
+
+DEF RED_BOX_C Solid {
+  name "RED_BOX_C"
+  translation -1.55 -0.95 0.92
+  children [
+    USE RED_SHAPE
+  ]
+  boundingObject USE RED_SHAPE
+  physics Physics { density -1 mass 0.04 }
+}
+
+DEF BLUE_TRAY_C Solid {
+  name "BLUE_TRAY_C"
+  translation -1.55 -1.45 0.91
+  children [
+    Shape {
+      appearance PBRAppearance { baseColor 0.9 0.6 0.1 roughness 0.4 }
+      geometry Box { size 0.16 0.16 0.02 }
+    }
+  ]
+  boundingObject Box { size 0.16 0.16 0.02 }
+}
+
+Table {
+  name "table1_C"
+  translation -1.5 -1.20 0
+  size 0.8 1.4 0.9
+}
+Table {
+  name "table2_C"
+  translation -2.42 -1.20 0
+  size 0.8 1.4 0.9
+}

@@ -1,0 +1,129 @@
+#VRML_SIM R2023a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/floors/protos/RectangleArena.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/appearances/protos/Parquetry.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/tables/protos/Table.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/robots/universal_robots/protos/UR5e.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/robots/nvidia/jetbot/protos/JetBotRaspberryPiCamera.proto"
+
+WorldInfo {
+}
+Viewpoint {
+  orientation -0.21160187868321728 -0.1283786958635411 0.9688877929802342 4.006331998363879
+  position 1.0250307650978452 3.6347213076738676 3.5749443844017956
+}
+TexturedBackground {
+  texture "factory"
+}
+TexturedBackgroundLight {
+  luminosity 0.7
+}
+RectangleArena {
+  floorSize 10 10
+  floorTileSize 2 2
+  floorAppearance Parquetry {
+    type "light strip"
+  }
+  wallHeight 1.2
+}
+UR5e {
+  hidden rotation_1 0 0 1 3.141592397561434
+  hidden rotation_2 0 -1 0 3.555570690674991e-05
+  hidden rotation_3 0 -1 0 7.962976429685281e-05
+  hidden rotation_4 0 0.9999999999999999 0 4.172325134277351e-07
+  hidden rotation_5 0 0 1 9.461314145935246e-05
+  hidden rotation_6 0 1 0 1.5707837172482408
+  translation -2.28 0 0.9
+  rotation 0 0 -1 -1.5707953071795862
+  controller "ur5_controller"
+  controllerArgs [
+    ""
+  ]
+  supervisor TRUE
+  toolSlot [
+    Transform {
+      translation 0 0.1237 0
+      rotation 1 0 0 -1.5708
+      children [
+        DEF frame6 Transform {
+          rotation 0 0 1 1.5708
+          children [
+            DEF frame_6 Slot {
+            }
+          ]
+        }
+      ]
+    }
+    Robotiq3fGripper {
+    }
+    Transform {
+      translation -2.93856e-07 0.08 0.068
+      rotation 0 0 1 1.5708
+      children [
+        JetBotRaspberryPiCamera {
+          translation 0 0 0.03
+          fieldOfView 1.5708
+          width 512
+          height 512
+          near 0.02
+        }
+      ]
+    }
+  ]
+}
+DEF table2 Table {
+  translation -2.28 0 0
+  name "table2"
+  size 0.9 1.6 0.9
+}
+DEF table1 Table {
+  translation -1.5 0 0
+  name "table1"
+  size 0.8 1.4 0.9
+}
+DEF bottle Solid {
+  translation -1.55 0.2 0.955
+  rotation 0 0 1 0
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 1 0 0
+        roughness 0.5
+        metalness 0
+      }
+      geometry Box {
+        size 0.05 0.05 0.1
+      }
+    }
+  ]
+  name "red_box"
+  boundingObject Box {
+    size 0.05 0.05 0.1
+  }
+  physics Physics {
+    density 500
+  }
+}
+DEF BLUE_TRAY Solid {
+  translation -1.55 -0.2 0.901
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.3 1
+        transparency 0.3
+        roughness 0.8
+        metalness 0
+      }
+      geometry Box {
+        size 0.25 0.25 0.01
+      }
+    }
+  ]
+  name "blue_tray"
+  boundingObject Box {
+    size 0.25 0.25 0.01
+  }
+}

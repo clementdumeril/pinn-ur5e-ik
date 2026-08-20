@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulateur 3D Robotique - PINN vs DLS</title>
+    
+    <!-- Google Fonts & Tailwind-like CSS variables -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    
+    <!-- Three.js & OrbitControls & TransformControls via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/TransformControls.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --panel-bg: rgba(22, 26, 37, 0.7);
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-color: #e5e9f0;
+            --text-dim: #8892b0;
+            --pinn-color: #00e5ff;
+            --dls-color: #ff3366;
+            --target-color: #39ff14;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            user-select: none;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            height: 100vh;
+            display: flex;
+        }
+
+        /* 3D Canvas occupy full background */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+
+        /* UI Overlays (Glassmorphism) */
+        .overlay {
+            position: absolute;
+            z-index: 10;
+            backdrop-filter: blur(16px);
+            background: var(--panel-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        /* Left Control Panel */
+        #control-panel {
+            top: 20px;
+            left: 20px;
+            width: 380px;
+            padding: 24px;
+            max-height: calc(100vh - 40px);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        /* Bottom Gauges Panel */
+        #gauges-panel {
+            bottom: 20px;
+            left: 420px;
+            right: 20px;
+            height: 160px;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            margin-bottom: 4px;
+            background: linear-gradient(90deg, #fff, var(--text-dim));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            font-size: 0.8rem;
+            color: var(--text-dim);
+            font-family: 'JetBrains Mono', monospace;
+            text-transform: uppercase;
+        }
+
+        .section-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            border-bottom: 1px dashed var(--border-color);
+            padding-bottom: 6px;
+            margin-bottom: 12px;
+        }
+
+        /* Sliders */
+        .slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+
+        .slider-header {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .slider-val {
+            font-family: 'JetBrains Mono', monospace;
+            color: var(--pinn-color);
+        }
+
+        input[type="range"] {
+            -webkit-appearance: none;
+            width: 100%;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.1);
+            outline: none;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: var(--pinn-color);
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--pinn-color);
+            transition: transform 0.1s;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        /* Radio Buttons */
+        .radio-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            padding: 8px;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid transparent;
+            transition: all 0.2s;
+        }
+
+        .radio-label:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: var(--border-color);
+        }
+
+        .radio-label input {
+            accent-color: var(--pinn-color);
+        }
+
+        /* Error Cards */
+        .error-card {
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .error-card.pinn {
+            background: rgba(0, 229, 255, 0.05);
+            border-color: rgba(0, 229, 255, 0.15);
+        }
+
+        .error-card.dls {
+            background: rgba(255, 51, 102, 0.05);
+            border-color: rgba(255, 51, 102, 0.15);
+        }
+
+        .error-label {
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .error-val {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 1.1rem;
+            font-weight: 700;
+        }
+
+        /* Circular Gauges for Motors */
+        .gauge-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            width: 120px;
+        }
+
+        .gauge-svg {
+            width: 80px;
+            height: 80px;
+            transform: rotate(-90deg);
+        }
+
+        .gauge-bg {
+            fill: none;
+            stroke: rgba(255, 255, 255, 0.05);
+            stroke-width: 8px;
+        }
+
+        .gauge-fill-pinn {
+            fill: none;
+            stroke: var(--pinn-color);
+            stroke-width: 8px;
+            stroke-dasharray: 226; /* 2 * pi * r (r=36) */
+            stroke-dashoffset: 226;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s;
+        }
+
+        .gauge-fill-dls {
+            fill: none;
+            stroke: var(--dls-color);
+            stroke-dasharray: 226;
+            stroke-dashoffset: 226;
+            stroke-width: 4px;
+            stroke-linecap: round;
+            transition: stroke-dashoffset 0.1s;
+        }
+
+        .gauge-text {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            font-weight: 700;
+        }
+
+        .gauge-title {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-dim);
+            text-transform: uppercase;
+        }
+
+        /* Loading Overlay if Model is absent */
+        #model-warning {
+            display: none;
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 170, 0, 0.2);
+            border: 1px solid #ffaa00;
+            border-radius: 8px;
+            padding: 10px 16px;
+            z-index: 100;
+            font-size: 0.85rem;
+            color: #ffcc66;
+            backdrop-filter: blur(8px);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D Canvas Background -->
+    <div id="canvas-container"></div>
+
+    <!-- Warnings -->
+    <div id="model-warning">
+        ⚠️ Modèle 'pinn_model.pth' non trouvé ! Veuillez lancer l'entraînement d'abord.
+    </div>
+
+    <!-- Control Panel -->
+    <div id="control-panel" class="overlay">
+        <div>
+            <h1>PINN IK Simulator</h1>
+            <div class="subtitle">Bras 3D Anthropomorphe</div>
+        </div>
+
+        <!-- Sliders -->
+        <div>
+            <div class="section-title">Position Cible</div>
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>Axe X (m)</span>
+                    <span id="val-x" class="slider-val">1.20</span>
+                </div>
+                <input type="range" id="slider-x" min="-2.0" max="2.0" step="0.05" value="1.2">
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>Axe Y (m)</span>
+                    <span id="val-y" class="slider-val">1.00</span>
+                </div>
+                <input type="range" id="slider-y" min="-2.0" max="2.0" step="0.05" value="1.0">
+            </div>
+
+            <div class="slider-group">
+                <div class="slider-header">
+                    <span>Axe Z (m)</span>
+                    <span id="val-z" class="slider-val">1.50</span>
+                </div>
+                <input type="range" id="slider-z" min="0.1" max="2.8" step="0.05" value="1.5">
+            </div>
+        </div>
+
+        <!-- Radios -->
+        <div>
+            <div class="section-title">Mode d'affichage</div>
+            <div class="radio-group">
+                <label class="radio-label">
+                    <input type="radio" name="display-mode" value="both" checked>
+                    <span>Comparer les deux bras</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="display-mode" value="pinn">
+                    <span>IA (PINN) uniquement</span>
+                </label>
+                <label class="radio-label">
+                    <input type="radio" name="display-mode" value="dls">
+                    <span>Solveur DLS uniquement</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Telemetry Errors -->
+        <div>
+            <div class="section-title">Erreur de suivi</div>
+            <div style="display: flex; flex-direction: column; gap: 10px;">
+                <div class="error-card pinn">
+                    <span class="error-label" style="color: var(--pinn-color);">IA (PINN)</span>
+                    <span id="err-pinn" class="error-val" style="color: var(--pinn-color);">0.0 mm</span>
+                </div>
+                <div class="error-card dls">
+                    <span class="error-label" style="color: var(--dls-color);">Numérique DLS</span>
+                    <span id="err-dls" class="error-val" style="color: var(--dls-color);">0.0 mm</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Gauges Panel -->
+    <div id="gauges-panel" class="overlay">
+        <!-- Motor 1 -->
+        <div class="gauge-container">
+            <svg class="gauge-svg">
+                <circle class="gauge-bg" cx="40" cy="40" r="36"/>
+                <circle id="fill-m1-pinn" class="gauge-fill-pinn" cx="40" cy="40" r="36"/>
+                <circle id="fill-m1-dls" class="gauge-fill-dls" cx="40" cy="40" r="36"/>
+            </svg>
+            <div id="text-m1" class="gauge-text">0.0°</div>
+            <div class="gauge-title">Moteur 1 (Base)</div>
+        </div>
+
+        <!-- Motor 2 -->
+        <div class="gauge-container">
+            <svg class="gauge-svg">
+                <circle class="gauge-bg" cx="40" cy="40" r="36"/>
+                <circle id="fill-m2-pinn" class="gauge-fill-pinn" cx="40" cy="40" r="36"/>
+                <circle id="fill-m2-dls" class="gauge-fill-dls" cx="40" cy="40" r="36"/>
+            </svg>
+            <div id="text-m2" class="gauge-text">0.0°</div>
+            <div class="gauge-title">Moteur 2 (Épaule)</div>
+        </div>
+
+        <!-- Motor 3 -->
+        <div class="gauge-container">
+            <svg class="gauge-svg">
+                <circle class="gauge-bg" cx="40" cy="40" r="36"/>
+                <circle id="fill-m3-pinn" class="gauge-fill-pinn" cx="40" cy="40" r="36"/>
+                <circle id="fill-m3-dls" class="gauge-fill-dls" cx="40" cy="40" r="36"/>
+            </svg>
+            <div id="text-m3" class="gauge-text">0.0°</div>
+            <div class="gauge-title">Moteur 3 (Coude)</div>
+        </div>
+    </div>
+
+    <script>
+        // --- SECTION 1 : CONFIGURATION THREE.JS ---
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0e1017);
+
+        const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+        camera.position.set(3, 4, 5);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.target.set(0, 0, 1.0);
+        controls.update();
+
+        // Lumières
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(5, 10, 7);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // Sol et axes
+        const gridHelper = new THREE.GridHelper(10, 20, 0x333b50, 0x1d222e);
+        scene.add(gridHelper);
+
+        const axesHelper = new THREE.AxesHelper(1.0);
+        scene.add(axesHelper);
+
+        // Matériaux du Robot
+        const pinnMaterial = new THREE.MeshStandardMaterial({
+            color: 0x00f0ff,
+            metalness: 0.9,
+            roughness: 0.1,
+            transparent: true,
+            opacity: 0.95
+        });
+
+        const dlsMaterial = new THREE.MeshStandardMaterial({
+            color: 0xff3366,
+            metalness: 0.8,
+            roughness: 0.2,
+            transparent: true,
+            opacity: 0.4 // Semi-transparent pour ne pas masquer le bras pinn
+        });
+
+        const jointMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffffff,
+            metalness: 0.9,
+            roughness: 0.05
+        });
+
+        const targetMaterial = new THREE.MeshBasicMaterial({
+            color: 0x39ff14,
+            wireframe: true
+        });
+
+        // Tracé de la cible (Sphère fil de fer)
+        const targetGeom = new THREE.SphereGeometry(0.08, 16, 16);
+        const targetMesh = new THREE.Mesh(targetGeom, targetMaterial);
+        scene.add(targetMesh);
+
+        // Gizmo de déplacement 3D direct de la cible
+        const transformControls = new THREE.TransformControls(camera, renderer.domElement);
+        transformControls.attach(targetMesh);
+        scene.add(transformControls);
+
+        // Désactiver le contrôle de caméra OrbitControls quand on déplace la cible
+        transformControls.addEventListener('dragging-changed', function (event) {
+            controls.enabled = !event.value;
+        });
+
+        // Classe pour représenter graphiquement un robot industriel réaliste
+        class RobotArm3D {
+            constructor(material) {
+                this.group = new THREE.Group();
+                scene.add(this.group);
+                
+                this.links = [];
+                
+                // Segment 0 (Piédestal de Base vertical): Cylindre lourd et épais
+                const geom0 = new THREE.CylinderGeometry(0.08, 0.1, 1.0, 16);
+                const mesh0 = new THREE.Mesh(geom0, material);
+                this.group.add(mesh0);
+                this.links.push(mesh0);
+                
+                // Segment 1 (Bras principal): Cylindre robuste métallique
+                const geom1 = new THREE.CylinderGeometry(0.06, 0.06, 1.0, 16);
+                const mesh1 = new THREE.Mesh(geom1, material);
+                this.group.add(mesh1);
+                this.links.push(mesh1);
+                
+                // Segment 2 (Avant-bras): Cylindre profilé et fuselé (tapered)
+                const geom2 = new THREE.CylinderGeometry(0.03, 0.045, 1.0, 16);
+                const mesh2 = new THREE.Mesh(geom2, material);
+                this.group.add(mesh2);
+                this.links.push(mesh2);
+                
+                // Rotules métalliques des articulations (de tailles adaptées)
+                this.joints = [];
+                for(let i=0; i<4; i++) {
+                    const radius = (i === 0) ? 0.14 : ((i === 3) ? 0.05 : 0.09);
+                    const geom = new THREE.SphereGeometry(radius, 16, 16);
+                    const mesh = new THREE.Mesh(geom, jointMaterial);
+                    this.group.add(mesh);
+                    this.joints.push(mesh);
+                }
+                
+                // Pince industrielle (Gripper) fixée au bout du dernier segment (p3)
+                this.gripperGroup = new THREE.Group();
+                this.group.add(this.gripperGroup);
+                
+                // Base de la pince (cylindre plat)
+                const baseGeom = new THREE.CylinderGeometry(0.05, 0.05, 0.04, 16);
+                const baseMesh = new THREE.Mesh(baseGeom, jointMaterial);
+                baseMesh.rotation.x = Math.PI / 2; // Alignée vers la cible
+                this.gripperGroup.add(baseMesh);
+                
+                // Doigt gauche de la pince (boîte rectangulaire)
+                const fingerGeom = new THREE.BoxGeometry(0.015, 0.08, 0.025);
+                const fingerLeft = new THREE.Mesh(fingerGeom, material);
+                fingerLeft.position.set(-0.025, 0, 0.05);
+                this.gripperGroup.add(fingerLeft);
+                
+                // Doigt droit de la pince
+                const fingerRight = new THREE.Mesh(fingerGeom, material);
+                fingerRight.position.set(0.025, 0, 0.05);
+                this.gripperGroup.add(fingerRight);
+            }
+
+            update(jointsCoords) {
+                // Placer les rotules (sphères de joints)
+                for(let i=0; i<4; i++) {
+                    this.joints[i].position.set(...jointsCoords[i]);
+                }
+                
+                // Placer et orienter les 3 segments (cylindres)
+                for(let i=0; i<3; i++) {
+                    const pStart = new THREE.Vector3(...jointsCoords[i]);
+                    const pEnd = new THREE.Vector3(...jointsCoords[i+1]);
+                    
+                    const direction = new THREE.Vector3().subVectors(pEnd, pStart);
+                    const length = direction.length();
+                    
+                    // Ajuster l'échelle verticale et positionner au centre du segment
+                    this.links[i].scale.set(1, length, 1);
+                    this.links[i].position.copy(pStart).add(direction.clone().multiplyScalar(0.5));
+                    
+                    // Aligner le cylindre
+                    const upVector = new THREE.Vector3(0, 1, 0);
+                    const axis = new THREE.Vector3().crossVectors(upVector, direction.clone().normalize()).normalize();
+                    const angle = Math.acos(upVector.dot(direction.clone().normalize()));
+                    
+                    if (axis.length() > 0.0001) {
+                        this.links[i].quaternion.setFromAxisAngle(axis, angle);
+                    } else {
+                        this.links[i].quaternion.set(0, 0, 0, 1);
+                    }
+                }
+                
+                // Positionner et orienter la pince (Gripper) à l'extrémité (p3)
+                const p2 = new THREE.Vector3(...jointsCoords[2]);
+                const p3 = new THREE.Vector3(...jointsCoords[3]);
+                const gripperDir = new THREE.Vector3().subVectors(p3, p2).normalize();
+                
+                this.gripperGroup.position.copy(p3);
+                
+                const zVector = new THREE.Vector3(0, 0, 1);
+                const axis = new THREE.Vector3().crossVectors(zVector, gripperDir).normalize();
+                const angle = Math.acos(zVector.dot(gripperDir));
+                
+                if (axis.length() > 0.0001) {
+                    this.gripperGroup.quaternion.setFromAxisAngle(axis, angle);
+                } else {
+                    this.gripperGroup.quaternion.set(0, 0, 0, 1);
+                }
+            }
+
+            setVisible(visible) {
+                this.group.visible = visible;
+            }
+        }
+
+        const armPinn = new RobotArm3D(pinnMaterial);
+        const armDls = new RobotArm3D(dlsMaterial);
+
+        // --- SECTION 2 : CONTROLES ET TÉLÉMÉTRIE ---
+        const sX = document.getElementById('slider-x');
+        const sY = document.getElementById('slider-y');
+        const sZ = document.getElementById('slider-z');
+        const valX = document.getElementById('val-x');
+        const valY = document.getElementById('val-y');
+        const valZ = document.getElementById('val-z');
+
+        const errPinnText = document.getElementById('err-pinn');
+        const errDlsText = document.getElementById('err-dls');
+
+        const fillM1Pinn = document.getElementById('fill-m1-pinn');
+        const fillM2Pinn = document.getElementById('fill-m2-pinn');
+        const fillM3Pinn = document.getElementById('fill-m3-pinn');
+
+        const fillM1Dls = document.getElementById('fill-m1-dls');
+        const fillM2Dls = document.getElementById('fill-m2-dls');
+        const fillM3Dls = document.getElementById('fill-m3-dls');
+
+        const textM1 = document.getElementById('text-m1');
+        const textM2 = document.getElementById('text-m2');
+        const textM3 = document.getElementById('text-m3');
+
+        // Mettre à jour l'arc des cercles de progression
+        // Le rayon r=36, périmètre=226.
+        function setGaugeValue(pinnElement, dlsElement, valuePinnRad, valueDlsRad) {
+            // Conversion en degrés [-180, 180]
+            const degPinn = (valuePinnRad * 180 / Math.PI);
+            const degDls = (valueDlsRad * 180 / Math.PI);
+
+            // Mettre en pourcentage [0, 1] où -180° = 0 et 180° = 1
+            const valPinnPct = (degPinn + 180) / 360;
+            const valDlsPct = (degDls + 180) / 360;
+
+            const offsetPinn = 226 - (valPinnPct * 226);
+            const offsetDls = 226 - (valDlsPct * 226);
+
+            pinnElement.style.strokeDashoffset = offsetPinn;
+            dlsElement.style.strokeDashoffset = offsetDls;
+        }
+
+        // Limiter la cible dans le volume physique accessible du robot (Workspace Clamping)
+        function clampTargetPosition(pos) {
+            // 1. Hauteur minimale par rapport au sol (éviter de taper le sol)
+            if (pos.z < 0.1) pos.z = 0.1;
+            
+            // 2. Portée maximale de sécurité par rapport à l'épaule (0, 0, L1=1.0)
+            // Longueur max cumulée bras + avant-bras = L2 + L3 = 2.0 m
+            const dx = pos.x;
+            const dy = pos.y;
+            const dz = pos.z - 1.0;
+            const distFromShoulder = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            const maxReach = 1.95; // Marge de sécurité de 5cm
+            
+            if (distFromShoulder > maxReach) {
+                const scale = maxReach / distFromShoulder;
+                pos.x = dx * scale;
+                pos.y = dy * scale;
+                pos.z = 1.0 + dz * scale;
+            }
+            
+            // 3. Éviter d'entrer en collision avec le piédestal de base vertical (rayon de 0.25 m)
+            const distFromCenter = Math.sqrt(pos.x*pos.x + pos.y*pos.y);
+            const minReach = 0.25;
+            if (distFromCenter < minReach) {
+                const scale = minReach / (distFromCenter || 1);
+                pos.x *= scale;
+                pos.y *= scale;
+            }
+        }
+
+        // Throttle pour éviter de saturer le serveur
+        let lastRequestTime = 0;
+        const throttleDelay = 25; // 40 Hz
+
+        function handleMove() {
+            const now = Date.now();
+            if (now - lastRequestTime < throttleDelay) return;
+            lastRequestTime = now;
+
+            let x = parseFloat(sX.value);
+            let y = parseFloat(sY.value);
+            let z = parseFloat(sZ.value);
+
+            // Appliquer les contraintes de volume
+            const pos = new THREE.Vector3(x, y, z);
+            clampTargetPosition(pos);
+            
+            // Mettre à jour les variables et les sliders si la position a été bridée
+            if (pos.x !== x || pos.y !== y || pos.z !== z) {
+                x = pos.x;
+                y = pos.y;
+                z = pos.z;
+                sX.value = x;
+                sY.value = y;
+                sZ.value = z;
+            }
+
+            valX.textContent = x.toFixed(2);
+            valY.textContent = y.toFixed(2);
+            valZ.textContent = z.toFixed(2);
+
+            // Placer la cible verte
+            targetMesh.position.set(x, y, z);
+
+            // Appel AJAX
+            fetch('/api/ik', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ x: x, y: y, z: z })
+            })
+            .then(res => res.json())
+            .then(data => {
+                // Alerte si modèle non entraîné
+                document.getElementById('model-warning').style.display = data.pinn_trained ? 'none' : 'block';
+
+                const mode = document.querySelector('input[name="display-mode"]:checked').value;
+
+                // Mettre à jour les géométries 3D
+                armPinn.update(data.pinn.joints);
+                armDls.update(data.dls.joints);
+
+                // Gérer les visibilités selon le mode
+                if (mode === 'pinn') {
+                    armPinn.setVisible(true);
+                    armDls.setVisible(false);
+                } else if (mode === 'dls') {
+                    armPinn.setVisible(false);
+                    armDls.setVisible(true);
+                } else {
+                    armPinn.setVisible(true);
+                    armDls.setVisible(true);
+                }
+
+                // Télémétrie des erreurs
+                errPinnText.textContent = data.pinn_trained ? `${data.pinn.error_mm.toFixed(1)} mm` : "N/A";
+                errDlsText.textContent = `${data.dls.error_mm.toFixed(1)} mm`;
+
+                // Cadrans des moteurs (Base, Épaule, Coude)
+                const activeAngles = mode === 'dls' ? data.dls.angles : data.pinn.angles;
+                
+                textM1.textContent = `${(activeAngles[0]*180/Math.PI).toFixed(1)}°`;
+                textM2.textContent = `${(activeAngles[1]*180/Math.PI).toFixed(1)}°`;
+                textM3.textContent = `${(activeAngles[2]*180/Math.PI).toFixed(1)}°`;
+
+                // Configurer les jauges circulaires doubles
+                setGaugeValue(fillM1Pinn, fillM1Dls, data.pinn.angles[0], data.dls.angles[0]);
+                setGaugeValue(fillM2Pinn, fillM2Dls, data.pinn.angles[1], data.dls.angles[1]);
+                setGaugeValue(fillM3Pinn, fillM3Dls, data.pinn.angles[2], data.dls.angles[2]);
+            })
+            .catch(err => console.error("API error:", err));
+        }
+
+        // Écouter les interactions des widgets
+        [sX, sY, sZ].forEach(slider => slider.addEventListener('input', handleMove));
+        document.querySelectorAll('input[name="display-mode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                lastRequestTime = 0; // forcer la mise à jour immédiate
+                handleMove();
+            });
+        });
+
+        // Mettre à jour les sliders et le robot quand on fait glisser la cible directement en 3D
+        transformControls.addEventListener('change', () => {
+            if (transformControls.dragging) {
+                const pos = targetMesh.position;
+                
+                // Limiter la cible dans le volume de travail du robot
+                pos.x = Math.max(-2.0, Math.min(2.0, pos.x));
+                pos.y = Math.max(-2.0, Math.min(2.0, pos.y));
+                pos.z = Math.max(0.1, Math.min(2.8, pos.z));
+                
+                sX.value = pos.x;
+                sY.value = pos.y;
+                sZ.value = pos.z;
+                
+                valX.textContent = pos.x.toFixed(2);
+                valY.textContent = pos.y.toFixed(2);
+                valZ.textContent = pos.z.toFixed(2);
+                
+                handleMove();
+            }
+        });
+
+        // Animation Loop Three.js
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // Initialisation initiale
+        handleMove();
+        animate();
+    </script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- IDE / outils ---
+.idea/
+.vscode/
+.claude/
+*.swp
+.DS_Store
+
+# --- Dépôt git imbriqué (à supprimer avant le premier commit) ---
+reference_ur5_repo/.git/
+
+# --- Fichiers trop volumineux pour GitHub (> 100 Mo) ---
+# Publier vgg16.h5 via une GitHub Release ou Git LFS
+reference_ur5_repo/computer_vision/*.h5
+reference_ur5_repo/computer_vision/*.h5.bak
+reference_ur5_repo/computer_vision/*.keras
+
+# --- Dataset de vision régénérable via le contrôleur data_collector ---
+reference_ur5_repo/dataset/images/
+
+# --- Webots : fichiers de projet locaux et caches ---
+*.wbproj
+.*.wbproj
+reference_ur5_repo/simulation/worlds/.*.jpg
+archive_v1_custom_arm/webots/worlds/.*.wbproj
+
+# --- Logs et sorties d'entraînement ---
+*.log
+runs/

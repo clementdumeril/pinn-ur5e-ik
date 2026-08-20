@@ -1,0 +1,5 @@
+machine_learning/
+machine_learning/img/
+.vscode/
+__pycache__/
+.idea/

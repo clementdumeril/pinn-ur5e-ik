@@ -1,0 +1,389 @@
+#VRML_SIM R2025a utf8
+
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackground.proto"
+EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/objects/backgrounds/protos/TexturedBackgroundLight.proto"
+
+WorldInfo {
+  basicTimeStep 16
+  coordinateSystem "ENU"
+}
+
+Viewpoint {
+  fieldOfView 0.83
+  orientation 0.187 -0.198 -0.962 2.21
+  position 2.65 2.12 2.34
+}
+
+TexturedBackground {
+}
+
+TexturedBackgroundLight {
+}
+
+# Lumière directe pour bien éclairer la table et le cube (sinon rendu trop sombre pour la vision)
+DirectionalLight {
+  direction 0 0 -1
+  intensity 3
+  castShadows FALSE
+}
+
+# Lumière ponctuelle au-dessus de la table
+PointLight {
+  location 1.0 0 2.0
+  intensity 6
+  attenuation 0 0 1
+}
+
+# Sol de sécurité
+Solid {
+  name "floor"
+  translation 0 0 0
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.8 0.8 0.8
+        roughness 0.8
+      }
+      geometry Plane {
+        size 10 10
+      }
+    }
+  ]
+  boundingObject Plane {
+    size 10 10
+  }
+}
+
+# Table de travail
+Solid {
+  name "table"
+  translation 1.0 0 0.25
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.5 0.35 0.25
+        roughness 0.6
+      }
+      geometry Box {
+        size 1.2 1.2 0.5
+      }
+    }
+  ]
+  boundingObject Box {
+    size 1.2 1.2 0.5
+  }
+}
+
+# Bac de dépôt (Cible de tri)
+Solid {
+  name "tray"
+  translation 0.8 -0.4 0.51
+  children [
+    Shape {
+      appearance PBRAppearance {
+        baseColor 0.1 0.3 0.8
+        roughness 0.4
+      }
+      geometry Box {
+        size 0.2 0.2 0.02
+      }
+    }
+  ]
+  boundingObject Box {
+    size 0.2 0.2 0.02
+  }
+}
+
+# L'objet rouge à attraper (avec physique)
+DEF RED_BOX Solid {
+  name "RED_BOX"
+  translation 0.8 0.2 0.53
+  rotation 0 0 1 0
+  children [
+    DEF BOX_SHAPE Shape {
+      appearance PBRAppearance {
+        baseColor 0.9 0.05 0.05
+        roughness 0.3
+        metalness 0
+      }
+      geometry Box {
+        size 0.06 0.06 0.06
+      }
+    }
+  ]
+  boundingObject USE BOX_SHAPE
+  physics Physics {
+    density -1
+    mass 0.1
+  }
+}
+
+# ==========================================================================
+#  Bras anthropomorphe 3 axes (cinématique conservée pour le PINN)
+#  + habillage industriel (profilés orange, boîtiers) + pince 2 doigts
+# ==========================================================================
+Robot {
+  name "AnthropomorphicArm"
+  controller "pinn_controller"
+  supervisor TRUE
+  translation 0 0 0
+  children [
+    # ---- Socle (fixe) ----
+    Solid {
+      translation 0 0 0.05
+      children [
+        Shape {
+          appearance DEF METAL PBRAppearance {
+            baseColor 0.22 0.22 0.25
+            roughness 0.4
+            metalness 0.9
+          }
+          geometry Box {
+            size 0.5 0.5 0.1
+          }
+        }
+      ]
+    }
+    Solid {
+      translation 0 0 0.3
+      children [
+        Shape {
+          appearance USE METAL
+          geometry Box {
+            size 0.24 0.24 0.4
+          }
+        }
+      ]
+    }
+    # ---- Caméra de vision (device du robot), orientée vers le bas ----
+    Camera {
+      name "camera"
+      translation 1.0 0 1.6
+      rotation 0 1 0 1.5708
+      fieldOfView 0.8
+      width 320
+      height 240
+    }
+    # ================= Joint 1 : rotation autour de Z (base pivot) =========
+    HingeJoint {
+      jointParameters HingeJointParameters {
+        axis 0 0 1
+        anchor 0 0 0.5
+      }
+      device [
+        RotationalMotor {
+          name "motor1"
+          minPosition -2.0
+          maxPosition 2.0
+          maxTorque 50
+        }
+        PositionSensor {
+          name "sensor1"
+        }
+      ]
+      endPoint Solid {
+        name "link1"
+        translation 0 0 0.5
+        children [
+          # Boîtier de l'articulation 1 (cylindre le long de Z)
+          Solid {
+            rotation 1 0 0 1.5708
+            children [
+              Shape {
+                appearance DEF ARMCOLOR PBRAppearance {
+                  baseColor 0.93 0.45 0.13
+                  roughness 0.5
+                  metalness 0.2
+                }
+                geometry Cylinder {
+                  height 0.24
+                  radius 0.15
+                }
+              }
+            ]
+          }
+          # Segment vertical L1 = 1.0 (profilé)
+          Solid {
+            translation 0 0 0.5
+            children [
+              Shape {
+                appearance USE ARMCOLOR
+                geometry Box {
+                  size 0.16 0.16 1.0
+                }
+              }
+            ]
+          }
+          # ============= Joint 2 : rotation autour de Y (épaule) ===========
+          HingeJoint {
+            jointParameters HingeJointParameters {
+              axis 0 1 0
+              anchor 0 0 1.0
+            }
+            device [
+              RotationalMotor {
+                name "motor2"
+                minPosition 0.0
+                maxPosition 2.9
+                maxTorque 50
+              }
+              PositionSensor {
+                name "sensor2"
+              }
+            ]
+            endPoint Solid {
+              name "link2"
+              translation 0 0 1.0
+              children [
+                # Boîtier articulation 2 (cylindre le long de Y)
+                Solid {
+                  children [
+                    Shape {
+                      appearance USE METAL
+                      geometry Cylinder {
+                        height 0.22
+                        radius 0.13
+                      }
+                    }
+                  ]
+                }
+                # Segment L2 = 1.0 le long de X (profilé)
+                Solid {
+                  translation 0.5 0 0
+                  children [
+                    Shape {
+                      appearance USE ARMCOLOR
+                      geometry Box {
+                        size 1.0 0.14 0.14
+                      }
+                    }
+                  ]
+                }
+                # =========== Joint 3 : rotation autour de Y (coude) ========
+                HingeJoint {
+                  jointParameters HingeJointParameters {
+                    axis 0 1 0
+                    anchor 1.0 0 0
+                  }
+                  device [
+                    RotationalMotor {
+                      name "motor3"
+                      minPosition -3.2
+                      maxPosition 3.2
+                      maxTorque 50
+                    }
+                    PositionSensor {
+                      name "sensor3"
+                    }
+                  ]
+                  endPoint Solid {
+                    name "link3"
+                    translation 1.0 0 0
+                    children [
+                      # Boîtier articulation 3 (cylindre le long de Y)
+                      Solid {
+                        children [
+                          Shape {
+                            appearance USE METAL
+                            geometry Cylinder {
+                              height 0.18
+                              radius 0.10
+                            }
+                          }
+                        ]
+                      }
+                      # Segment L3 = 1.0 le long de X (profilé)
+                      Solid {
+                        translation 0.5 0 0
+                        children [
+                          Shape {
+                            appearance USE ARMCOLOR
+                            geometry Box {
+                              size 1.0 0.10 0.10
+                            }
+                          }
+                        ]
+                      }
+                      # ============ Poignet + PINCE 2 doigts ==============
+                      # Point de référence de la pince (utilisé par le PINN / Supervisor)
+                      DEF END_EFFECTOR Solid {
+                        name "end_effector"
+                        translation 1.0 0 0
+                        children [
+                          # Corps / paume de la pince
+                          Solid {
+                            translation 0.04 0 0
+                            children [
+                              Shape {
+                                appearance USE METAL
+                                geometry Box {
+                                  size 0.12 0.18 0.10
+                                }
+                              }
+                            ]
+                          }
+                          # ---- Doigt gauche (glissière le long de Y) ----
+                          SliderJoint {
+                            jointParameters JointParameters {
+                              axis 0 1 0
+                            }
+                            device [
+                              LinearMotor {
+                                name "gripper_left"
+                                minPosition 0.0
+                                maxPosition 0.03
+                                maxForce 20
+                              }
+                            ]
+                            endPoint DEF FINGER_L Solid {
+                              name "finger_left"
+                              translation 0.13 -0.07 0
+                              children [
+                                Shape {
+                                  appearance USE METAL
+                                  geometry Box {
+                                    size 0.12 0.02 0.09
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                          # ---- Doigt droit (glissière le long de Y) ----
+                          SliderJoint {
+                            jointParameters JointParameters {
+                              axis 0 1 0
+                            }
+                            device [
+                              LinearMotor {
+                                name "gripper_right"
+                                minPosition -0.03
+                                maxPosition 0.0
+                                maxForce 20
+                              }
+                            ]
+                            endPoint DEF FINGER_R Solid {
+                              name "finger_right"
+                              translation 0.13 0.07 0
+                              children [
+                                Shape {
+                                  appearance USE METAL
+                                  geometry Box {
+                                    size 0.12 0.02 0.09
+                                  }
+                                }
+                              ]
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
