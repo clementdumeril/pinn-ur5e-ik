@@ -182,6 +182,12 @@ def main():
     print()
     print("=== ETAPE 1 : mise en place de la camera ===")
     print(f"  pose demandee : {POSE_CAMERA}  rot {[round(r, 2) for r in ROT_CAMERA]}")
+
+    # Passer par une posture neutre connue avant de viser la pose de lecture.
+    # Sans cela le bras part de la configuration ou le monde l'a laisse, et le
+    # chemin vers la solution d'IK peut etre acrobatique -- c'est le mouvement
+    # etrange visible au demarrage.
+    ur5.move_to_config([0, 0, 0, 0, 0, 0])
     ur5.move_to_pose(list(POSE_CAMERA), list(ROT_CAMERA), wrist='up')
     attendre_immobilite(ur5, cam_node)
 
@@ -243,6 +249,26 @@ def main():
     print(f"  zone visible : x [{zone['x_min']:.3f}, {zone['x_max']:.3f}]  "
           f"y [{zone['y_min']:.3f}, {zone['y_max']:.3f}]")
 
+    # --- Inclinaison de la camera, mesuree sans modele ---------------------
+    # Une camera verticale voit une zone CENTREE sous elle. L'ecart entre sa
+    # position au sol et le centre de ce qu'elle voit donne donc directement son
+    # decentrage, sans avoir a identifier la convention d'axes de Webots.
+    centre = np.array([(zone['x_min'] + zone['x_max']) / 2,
+                       (zone['y_min'] + zone['y_max']) / 2])
+    sous_camera = T_cam[:3, 3][:2]
+    decal = centre - sous_camera
+    hauteur = float(T_cam[2, 3]) - CUBE_Z
+    angle = np.degrees(np.arctan2(np.linalg.norm(decal), hauteur))
+    print()
+    print("  --- verticalite de la camera ---")
+    print(f"  camera au sol      : x {sous_camera[0]:+.3f}  y {sous_camera[1]:+.3f}")
+    print(f"  centre du champ    : x {centre[0]:+.3f}  y {centre[1]:+.3f}")
+    print(f"  decentrage         : dx {decal[0]*1000:+.0f} mm  dy {decal[1]*1000:+.0f} mm "
+          f"({np.linalg.norm(decal)*1000:.0f} mm)")
+    print(f"  hauteur au-dessus de la table : {hauteur:.3f} m")
+    print(f"  -> inclinaison apparente : {angle:.1f} deg  "
+          f"({'quasi verticale' if angle < 5 else 'penchee'})")
+
     json.dump({
         'reading_pose': {'position': list(POSE_CAMERA), 'orientation': list(ROT_CAMERA)},
         'image_size': IMG_SIZE,
@@ -255,6 +281,8 @@ def main():
         'visible_zone_world': zone,
         'coverage': len(src) / total,
         'points_mesures': len(src),
+        'decentrage_mm': float(np.linalg.norm(decal) * 1000),
+        'inclinaison_apparente_deg': float(angle),
     }, open(os.path.join(dataset_dir, 'calibration.json'), 'w'), indent=2)
     print("  calibration.json ecrit")
 

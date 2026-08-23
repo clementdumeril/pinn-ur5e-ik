@@ -10,6 +10,9 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/robots/nvidia/jetbot/protos/JetBotRaspberryPiCamera.proto"
 
 WorldInfo {
+  # 32 ms (le defaut Webots) est trop grossier pour les contacts de la pince :
+  # physique instable, bras qui vibre pendant les mesures, prise qui glisse.
+  basicTimeStep 8
 }
 Viewpoint {
   orientation -0.21160187868321728 -0.1283786958635411 0.9688877929802342 4.006331998363879

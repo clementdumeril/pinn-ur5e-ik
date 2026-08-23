@@ -9,7 +9,9 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2025a/projects/devices/robotiq/protos/Robotiq3fGripper.proto"
 
 WorldInfo {
-  basicTimeStep 16
+  # 32 ms (le defaut Webots) est trop grossier pour les contacts de la pince :
+  # physique instable, bras qui vibre pendant les mesures, prise qui glisse.
+  basicTimeStep 8
   coordinateSystem "ENU"
 }
 

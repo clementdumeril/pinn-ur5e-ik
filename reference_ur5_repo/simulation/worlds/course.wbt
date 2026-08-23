@@ -5,6 +5,9 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/objects/floors/protos/RectangleArena.proto"
 
 WorldInfo {
+  # 32 ms (le defaut Webots) est trop grossier pour les contacts de la pince :
+  # physique instable, bras qui vibre pendant les mesures, prise qui glisse.
+  basicTimeStep 8
 }
 Viewpoint {
   orientation -0.2962698275702464 -0.15882641197857972 0.941805903639124 4.076705990381846

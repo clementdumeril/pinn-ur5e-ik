@@ -10,10 +10,8 @@ EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/project
 EXTERNPROTO "https://raw.githubusercontent.com/cyberbotics/webots/R2023a/projects/robots/nvidia/jetbot/protos/JetBotRaspberryPiCamera.proto"
 
 WorldInfo {
-  # basicTimeStep par defaut = 32 ms : beaucoup trop grossier pour les contacts
-  # doigt/cube de la PandaHand. C'est ce qui produisait les avertissements
-  # "The current physics step could not be computed correctly" et rendait la
-  # prise instable (cube pousse, glissant ou mal saisi).
+  # 32 ms (le defaut Webots) est trop grossier pour les contacts de la pince :
+  # physique instable, bras qui vibre pendant les mesures, prise qui glisse.
   basicTimeStep 8
 }
 Viewpoint {
