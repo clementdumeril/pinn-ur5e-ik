@@ -151,6 +151,71 @@ def attendre_immobilite(ur5, cam_node, duree=STABILISATION):
     return False
 
 
+def bloquer_pince(ur5, ouverture=0.04):
+    """
+    Maintient les doigts de la PandaHand a une ouverture fixe.
+
+    Sans cela ils restent des articulations LIBRES : ur5.init_handles() vide
+    self.finger_joints puis parcourt cette liste vide, si bien qu'aucun doigt
+    n'est jamais pilote. Ils ballottent au gre des mouvements du bras, ce qui
+    multiplie les contacts et provoque les avertissements
+    "physics step could not be computed correctly".
+
+    Les noms changent selon la version du PROTO :
+      R2023a : panda_finger_joint1 / panda_finger_joint2
+      R2025a : panda_finger::left  / panda_finger::right
+    """
+    for a, b in (("panda_finger_joint1", "panda_finger_joint2"),
+                 ("panda_finger::left", "panda_finger::right")):
+        f1, f2 = ur5.supervisor.getDevice(a), ur5.supervisor.getDevice(b)
+        if f1 is not None and f2 is not None:
+            for f in (f1, f2):
+                f.setVelocity(0.1)
+                f.setPosition(ouverture)
+            print(f"  pince bloquee a {ouverture:.3f} m ({a})")
+            return True
+    print("  ATTENTION : doigts de la pince introuvables, ils resteront libres")
+    return False
+
+
+def ou_pointe_la_camera(T_cam):
+    """
+    Determine par la mesure quel axe local de la camera est l'axe optique.
+
+    Deux tentatives d'identifier la convention d'axes de Webots par ajustement
+    ont echoue (595 puis 817 px). On procede donc autrement : pour chacun des
+    6 axes locaux possibles, on lance un rayon depuis la camera et on regarde
+    ou il rencontre le plan de la table. Un seul peut etre l'axe optique --
+    celui qui tombe sur la table, pres de ce que l'image montre effectivement.
+
+    Purement informatif : rien dans la calibration n'en depend, puisque
+    l'homographie est ajustee sur des correspondances mesurees.
+    """
+    C = T_cam[:3, 3]
+    R = T_cam[:3, :3]
+    (x0, x1), (y0, y1) = bornes_table()
+
+    print()
+    print("  --- ou pointe chaque axe local de la camera ---")
+    print(f"  camera a {np.round(C, 3)}, table a z = {CUBE_Z:.3f}")
+    axes = {'+x': (1, 0, 0), '-x': (-1, 0, 0), '+y': (0, 1, 0),
+            '-y': (0, -1, 0), '+z': (0, 0, 1), '-z': (0, 0, -1)}
+    for nom, a in axes.items():
+        d = R @ np.array(a, dtype=float)
+        if abs(d[2]) < 1e-6 or (CUBE_Z - C[2]) / d[2] <= 0:
+            print(f"    {nom}  ne descend pas vers la table")
+            continue
+        t = (CUBE_Z - C[2]) / d[2]
+        P = C + t * d
+        sur = (x0 <= P[0] <= x1) and (y0 <= P[1] <= y1)
+        dist = np.linalg.norm(P[:2] - C[:2]) * 1000
+        print(f"    {nom}  vise x {P[0]:+.3f}  y {P[1]:+.3f}   "
+              f"{'SUR LA TABLE' if sur else 'hors table'}   "
+              f"a {dist:.0f} mm de la verticale")
+    print("  -> l'axe optique est celui qui vise la table ; l'ecart a la")
+    print("     verticale donne l'inclinaison a corriger via ROT_CAMERA.")
+
+
 def main():
     random.seed(0)
     np.random.seed(0)
@@ -158,6 +223,7 @@ def main():
     ur5 = UR5()
     ur5.use_pinn = False             # IK analytique exacte pour la calibration
     ur5.setup_camera()
+    bloquer_pince(ur5)               # sinon les doigts ballottent
 
     box = ur5.bottle
     if box is None:
@@ -201,6 +267,8 @@ def main():
     ecart = np.linalg.norm(T_cam[:3, 3] - T_cmd[:3, 3]) * 1000
     print(f"  decalage outil->camera : {np.round(T_cmd_cam[:3, 3], 4)} "
           f"({ecart:.0f} mm)")
+
+    ou_pointe_la_camera(T_cam)
 
     # ---------------------------------------------------------------
     # ETAPE 2 : que voit-elle ? on regarde, on ne calcule pas
