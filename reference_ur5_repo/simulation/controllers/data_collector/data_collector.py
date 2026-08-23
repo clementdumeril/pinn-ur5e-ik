@@ -70,7 +70,7 @@ MARGE = 0.03                        # marge (m) retiree de la zone visible
 IMG_SIZE = 256                      # taille enregistree = entree du reseau
 STABILISATION = 1.5                 # s de temps simule apres le deplacement
 FOV = 1.5708                        # fieldOfView de la camera (rad), cf. le .wbt
-DEBORD = 1.15                       # on balaye 15 % au-dela du champ predit,
+DEBORD = 1.45                       # on balaye 45 % au-dela du champ predit,
                                     # pour mesurer la frontiere et non la deviner
 
 COLLECTER_IMAGES = False            # True uniquement pour reentrainer le VGG16
@@ -327,16 +327,41 @@ def main():
     # ---------------------------------------------------------------
     print()
     print("=== ETAPE 3 : homographie pixel -> monde ===")
-    H, _ = cv2.findHomography(np.array(src, dtype=np.float64),
-                              np.array(dst, dtype=np.float64), cv2.RANSAC, 0.005)
+    # Seuil RANSAC a 20 mm, pas 5.
+    # A 5 mm il etait sous la mediane des residus (5.3 mm) : RANSAC classait la
+    # moitie des points en aberrants et ajustait sur un sous-ensemble, laissant
+    # aux points ecartes de gros residus -- d'ou un RMSE de 38 mm pour une
+    # mediane de 5 mm. Le bruit reel etant de l'ordre de 5 mm, 20 mm ne rejette
+    # que les vraies aberrations.
+    H, inliers = cv2.findHomography(np.array(src, dtype=np.float64),
+                                    np.array(dst, dtype=np.float64),
+                                    cv2.RANSAC, 0.020)
     if H is None:
         print("  Ajustement impossible.")
         return
     P = np.hstack([np.array(src), np.ones((len(src), 1))]) @ H.T
     P = P[:, :2] / P[:, 2:3]
     res = np.linalg.norm(P - np.array(dst), axis=1) * 1000
+    n_in = int(inliers.sum()) if inliers is not None else len(src)
+    print(f"  points retenus : {n_in}/{len(src)}")
     print(f"  residus : moyenne {res.mean():.1f} mm, median {np.median(res):.1f} mm, "
           f"max {res.max():.1f} mm")
+
+    # --- Residu en fonction de la distance au centre du champ --------------
+    # Le cube depasse de 10 cm au-dessus de la table, alors qu'une homographie
+    # suppose une scene PLATE. Le centroide des pixels rouges est celui de la
+    # face visible : sous la camera on ne voit que le dessus, au bord on voit
+    # aussi un cote et le centroide descend. La hauteur effective varie donc
+    # avec la position, ce qu'aucune homographie ne peut representer.
+    # L'erreur qui en resulte croit avec la distance au centre -- ce profil le
+    # montre, et delimite la zone reellement exploitable.
+    d = np.linalg.norm(np.array(dst) - np.array([cx, cy]), axis=1)
+    print("  residu selon la distance au centre du champ :")
+    for lo in np.arange(0.0, d.max() + 0.001, 0.10):
+        m = (d >= lo) & (d < lo + 0.10)
+        if m.sum():
+            print(f"    {lo:.2f} a {lo + 0.10:.2f} m : {m.sum():3d} pts, "
+                  f"median {np.median(res[m]):5.1f} mm, max {res[m].max():5.1f} mm")
 
     a = np.array(dst)
     zone = {'x_min': float(a[:, 0].min()) + MARGE, 'x_max': float(a[:, 0].max()) - MARGE,
