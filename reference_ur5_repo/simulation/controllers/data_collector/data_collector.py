@@ -56,7 +56,12 @@ CUBE_Z = 0.955                      # hauteur du centre du cube pose sur la tabl
 # reorienter le poignet. Modifier ces valeurs et relancer suffit a changer le
 # point de vue -- tout le reste (zone visible, homographie) est remesure.
 POSE_CAMERA = [-0.10, -0.68, 0.45]
-ROT_CAMERA = [PI, 0.30, -PI / 2]
+
+# Le deuxieme angle est le PITCH, et c'est exactement l'inclinaison de la
+# camera : avec 0.30 rad l'axe optique tombait 135 mm en avant de la verticale
+# pour 436 mm de hauteur, soit 17.20 deg -- contre 17.19 deg pour 0.30 rad.
+# A 0, la camera regarde droit vers le bas.
+ROT_CAMERA = [PI, 0.0, -PI / 2]
 
 # --- Reglages ------------------------------------------------------------
 GRILLE = 11                         # balayage GRILLE x GRILLE sur la table
