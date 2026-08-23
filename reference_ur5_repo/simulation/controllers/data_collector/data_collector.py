@@ -71,7 +71,7 @@ MARGE = 0.03                        # marge (m) retiree de la zone visible
 IMG_SIZE = 256                      # taille enregistree = entree du reseau
 STABILISATION = 1.5                 # s de temps simule apres le deplacement
 FOV = 1.5708                        # fieldOfView de la camera (rad), cf. le .wbt
-DEBORD = 1.45                       # on balaye 45 % au-dela du champ predit,
+DEBORD = 1.05                       # on balaye 5 % au-dela du rayon calcule,
                                     # pour mesurer la frontiere et non la deviner
 
 COLLECTER_IMAGES = False            # True uniquement pour reentrainer le VGG16
@@ -294,25 +294,42 @@ def main():
     # predit : la frontiere reste ainsi MESUREE, pas supposee.
     (x0, x1), (y0, y1) = bornes_table()
     h = float(T_cam[2, 3]) - CUBE_Z
-    demi = h * np.tan(FOV / 2) * DEBORD
+    rayon_champ = h * np.tan(FOV / 2)
     cx, cy = float(T_cam[0, 3]), float(T_cam[1, 3])
-    bx = (max(x0 + 0.02, cx - demi), min(x1 - 0.02, cx + demi))
-    by = (max(y0 + 0.02, cy - demi), min(y1 - 0.02, cy + demi))
-    print(f"  hauteur {h:.3f} m -> champ predit {2 * h * np.tan(FOV / 2):.3f} m de cote")
-    print(f"  zone balayee : x [{bx[0]:.3f}, {bx[1]:.3f}]  y [{by[0]:.3f}, {by[1]:.3f}]")
+
+    # Le champ est un DISQUE, la table un RECTANGLE, et ils ne coincident pas :
+    # ici le disque (0,926 m) deborde la table en x (0,800 m) mais ne la couvre
+    # pas en y (1,400 m). Balayer la boite englobante faisait donc apparaitre le
+    # cube hors champ 51 fois sur 121.
+    #
+    # On echantillonne le disque, intersecte avec la table. DEBORD depasse
+    # legerement le rayon calcule pour que la frontiere reste verifiee par la
+    # mesure et pas seulement predite.
+    bx = (max(x0 + 0.02, cx - rayon_champ * DEBORD),
+          min(x1 - 0.02, cx + rayon_champ * DEBORD))
+    by = (max(y0 + 0.02, cy - rayon_champ * DEBORD),
+          min(y1 - 0.02, cy + rayon_champ * DEBORD))
+    print(f"  hauteur {h:.3f} m -> champ = disque de rayon {rayon_champ:.3f} m")
+    print(f"  table : x [{x0:.3f}, {x1:.3f}]  y [{y0:.3f}, {y1:.3f}]")
+    print(f"  on echantillonne le disque intersecte avec la table")
 
     src, dst = [], []
+    hors = 0
     for x in np.linspace(bx[0], bx[1], GRILLE):
         for y in np.linspace(by[0], by[1], GRILLE):
+            if np.hypot(x - cx, y - cy) > rayon_champ * DEBORD:
+                hors += 1
+                continue
             poser_cube(ur5, field, box, x, y)
             uv = detecter_cube(ur5.get_image())
             if uv is not None:
                 src.append(uv)
                 dst.append((x, y))
 
-    total = GRILLE * GRILLE
-    print(f"  cube visible sur {len(src)}/{total} positions balayees "
-          f"({100 * len(src) / total:.0f} %)")
+    total = GRILLE * GRILLE - hors
+    print(f"  {hors} positions hors du disque, non testees")
+    print(f"  cube visible sur {len(src)}/{total} positions testees "
+          f"({100 * len(src) / max(total, 1):.0f} %)")
     if len(src) / total > 0.97:
         print("  quasi tout est visible -> le champ deborde la zone balayee,")
         print("     augmenter DEBORD pour mesurer la vraie frontiere.")
@@ -397,6 +414,17 @@ def main():
     print(f"  residus AVANT : median {np.median(res):5.1f} mm, max {res.max():5.1f} mm")
     print(f"  residus APRES : median {np.median(res2):5.1f} mm, max {res2.max():5.1f} mm")
 
+    # Avec un cube de 5 cm la parallaxe est deja faible, et l'homographie en
+    # absorbe l'essentiel (elle ajuste un plan a la hauteur moyenne du
+    # centroide). La correction radiale peut alors n'apporter rien, voire
+    # degrader legerement. On ne la garde que si elle ameliore reellement.
+    if np.median(res2) < np.median(res) * 0.9:
+        print("  -> correction conservee")
+    else:
+        print("  -> correction INUTILE ici, desactivee (la parallaxe est deja")
+        print("     absorbee par l'homographie et le cube raccourci)")
+        coef = np.array([0.0, 0.0])
+
     # --- Champ de vue, calcule et non plus cherche -------------------------
     # Camera verticale : elle voit un disque de rayon h*tan(FOV/2) centre a sa
     # verticale. Le disque inscrit est independant de la rotation de l'image,
@@ -467,8 +495,14 @@ def main():
             w = csv.writer(fh)
             w.writerow(['filename', 'x_pixel', 'y_pixel'])
             while garde < NB_IMAGES:
-                x = random.uniform(zone['x_min'], zone['x_max'])
-                y = random.uniform(zone['y_min'], zone['y_max'])
+                # Tirage dans le DISQUE du champ, pas dans son rectangle
+                # englobant : sinon un tir sur cinq tombe dans un coin que la
+                # camera ne voit pas.
+                while True:
+                    x = random.uniform(zone['x_min'], zone['x_max'])
+                    y = random.uniform(zone['y_min'], zone['y_max'])
+                    if np.hypot(x - cx, y - cy) <= rayon:
+                        break
                 poser_cube(ur5, field, box, x, y)
                 img = ur5.get_image()
                 uv = detecter_cube(img)
