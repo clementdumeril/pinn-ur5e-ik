@@ -613,6 +613,11 @@ def main():
         'camera_resolution': 512,
         'field_of_view': FOV,
         'cube_z': CUBE_Z,
+        # Transformation rigide entre le repere COMMANDE par move_to_pose (bout de
+        # la chaine DH) et la camera. Elle est constante : la camera est vissee
+        # sur le poignet. Sans elle, commander une position place un repere
+        # mathematique invisible, pas l'objectif -- d'ou UR5.move_camera_to().
+        'tool_to_camera': T_cmd_cam.tolist(),
         'axis_convention': conv_name,
         'axis_convention_rms_px': conv_err,
         'pixel_to_world_homography': H.tolist(),

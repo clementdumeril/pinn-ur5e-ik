@@ -1141,3 +1141,76 @@ la même échelle que l'image affichée. Le `/2` décalait donc **aussi la croix
 de la vérité terrain**, ce qui faisait croire à une erreur du modèle là où il n'y
 avait qu'un défaut d'affichage. Corrigé, et la cellule montre maintenant trois
 exemples avec l'erreur en pixels et en millimètres.
+
+---
+
+## 18. 🎥 Commander la camera, pas un repere invisible
+
+### 18.1 Le probleme
+
+`move_to_pose([x, y, z], ...)` place le **bout de la chaine DH** -- un repere
+purement mathematique defini par `d6 = 0.0996 + 0.1237` dans la table DH de
+`ur5.py`. Ce n'est ni le bout des doigts, ni la camera.
+
+La camera est vissee sur le cote du poignet :
+
+```
+Transform { translation 0 0.08 0.068   rotation 0 0 1 1.5708
+  JetBotRaspberryPiCamera { translation 0 0 0.03 } }
+```
+
+Mesure de la phase A : elle se trouve a **10,8 cm** du point commande, dans une
+direction qui tourne avec le poignet. Commander une position ne place donc pas
+l'objectif ou on croit.
+
+### 18.2 La correction
+
+Dans le repere robot, la camera se trouve en :
+
+```
+position_camera = R(rot) . decalage_local + position_outil
+```
+
+d'ou, en inversant :
+
+```
+position_outil = position_camera - R(rot) . decalage_local
+```
+
+C'est ce que fait `UR5.move_camera_to()`. Verification numerique de l'aller-retour :
+**0,000000 mm** d'erreur.
+
+### 18.3 Usage
+
+```python
+# Avant -- on commande un repere invisible
+ur5.move_to_pose([-0.05, -0.65, 0.50], [PI, 0.45, -PI/2], wrist='up')
+#   la camera finit ~10,8 cm ailleurs
+
+# Apres -- on commande l'objectif
+ur5.move_camera_to([-0.05, -0.65, 0.50], [PI, 0.45, -PI/2], wrist='up')
+#   [Camera] cible objectif [-0.05 -0.65  0.5] -> outil commande [-0.031 -0.551  0.462]
+```
+
+Les 108 mm d'ecart entre les deux lignes sont exactement le decalage du montage.
+
+`move_camera_to` accepte les memes arguments que `move_to_pose` (`wrist`,
+`shoulder`, `duration`) et renvoie la position d'outil effectivement commandee.
+
+### 18.4 Ce qui a change dans le code
+
+| Fichier | Modification |
+| :-- | :-- |
+| `data_collector.py` | la phase A mesurait deja la transformation outil -> camera mais la **jetait**. Elle est desormais enregistree sous la cle `tool_to_camera` de `calibration.json`. |
+| `ur5.py` | `camera_offset()` relit la matrice 4x4 ; `move_camera_to()` applique la correction. |
+
+### 18.5 Prerequis
+
+`tool_to_camera` n'existe pas dans les calibrations anterieures. Tant que le
+monde `my_first_simulation_datagen.wbt` n'a pas ete relance, `move_camera_to()`
+leve une erreur explicite plutot que de viser a cote :
+
+```
+KeyError: 'tool_to_camera' absent de calibration.json :
+relancer le monde my_first_simulation_datagen.wbt pour le mesurer.
+```

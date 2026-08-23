@@ -1132,6 +1132,60 @@ class UR5:
                   f"centroide ({u:.1f}, {v:.1f}) px")
         return self.pixel_to_robot(u, v, show_img=show_img, img=img)
 
+    def camera_offset(self):
+        """
+        Transformation rigide entre le repere commande et la camera.
+
+        `move_to_pose` commande le bout de la chaine DH, un repere purement
+        mathematique. La camera, elle, est vissee sur le cote du poignet
+        (translation 0 0.08 0.068 dans le toolSlot, plus sa rotation propre) :
+        elle se trouve environ 10.8 cm plus loin. Cette matrice 4x4 exprime la
+        camera dans le repere de l'outil commande ; elle est constante.
+
+        Mesuree par la phase A de data_collector et rangee dans calibration.json.
+
+        Returns:
+            np.ndarray (4, 4)
+        """
+        calib = self.vision_calibration()
+        T = calib.get("tool_to_camera")
+        if T is None:
+            raise KeyError(
+                "'tool_to_camera' absent de calibration.json : relancer le monde "
+                "my_first_simulation_datagen.wbt pour le mesurer.")
+        return np.array(T)
+
+    def move_camera_to(self, cam_pos, rot, euler="XYZ", **kwargs):
+        """
+        Amene LA CAMERA a la position demandee.
+
+        `move_to_pose` positionne le bout de la chaine DH ; la camera atterrit
+        alors ~10.8 cm ailleurs, dans une direction qui tourne avec le poignet.
+        Cette methode fait la correction : tu donnes ou tu veux l'objectif, elle
+        calcule ou envoyer l'outil.
+
+        Le raisonnement tient en une ligne. Dans le repere robot :
+            position_camera = R(rot) @ decalage_local + position_outil
+        d'ou :
+            position_outil = position_camera - R(rot) @ decalage_local
+
+        Parameters:
+            cam_pos : [x, y, z] voulus pour la CAMERA (repere robot)
+            rot     : [rx, ry, rz] orientation de l'outil, comme move_to_pose
+            euler   : ordre des angles (defaut 'XYZ')
+            kwargs  : passes tels quels a move_to_pose (wrist, duration, ...)
+
+        Returns:
+            la position d'outil effectivement commandee, pour verification
+        """
+        T_tc = self.camera_offset()
+        R = build_matrix([0.0, 0.0, 0.0], rot, euler=euler)[:3, :3]
+        tool_pos = np.asarray(cam_pos, dtype=float) - R @ T_tc[:3, 3]
+        print(f"[Camera] cible objectif {np.round(cam_pos, 3)} "
+              f"-> outil commande {np.round(tool_pos, 3)}")
+        self.move_to_pose(list(tool_pos), rot, euler=euler, **kwargs)
+        return tool_pos
+
     def get_bottle_frame(self):
         """
         Get bottle frame relative to robot base
