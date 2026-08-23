@@ -69,6 +69,9 @@ MIN_RED_PIXELS = 20                 # seuil de detection du cube
 MARGE = 0.03                        # marge (m) retiree de la zone visible
 IMG_SIZE = 256                      # taille enregistree = entree du reseau
 STABILISATION = 1.5                 # s de temps simule apres le deplacement
+FOV = 1.5708                        # fieldOfView de la camera (rad), cf. le .wbt
+DEBORD = 1.15                       # on balaye 15 % au-dela du champ predit,
+                                    # pour mesurer la frontiere et non la deviner
 
 COLLECTER_IMAGES = False            # True uniquement pour reentrainer le VGG16
 NB_IMAGES = 1000
@@ -279,11 +282,27 @@ def main():
     # ETAPE 2 : que voit-elle ? on regarde, on ne calcule pas
     # ---------------------------------------------------------------
     print()
-    print(f"=== ETAPE 2 : balayage {GRILLE}x{GRILLE} de la table ===")
+    print(f"=== ETAPE 2 : balayage {GRILLE}x{GRILLE} ===")
+
+    # On balaye ce que la camera peut voir, pas toute la table.
+    #
+    # Une camera a hauteur h avec un champ FOV couvre un carre de cote
+    # 2*h*tan(FOV/2), centre a sa verticale. Balayer toute la table faisait
+    # apparaitre le cube hors cadre 55 fois sur 121 -- du temps perdu, et un
+    # spectacle deroutant. On ajoute DEBORD pour depasser un peu le champ
+    # predit : la frontiere reste ainsi MESUREE, pas supposee.
     (x0, x1), (y0, y1) = bornes_table()
+    h = float(T_cam[2, 3]) - CUBE_Z
+    demi = h * np.tan(FOV / 2) * DEBORD
+    cx, cy = float(T_cam[0, 3]), float(T_cam[1, 3])
+    bx = (max(x0 + 0.02, cx - demi), min(x1 - 0.02, cx + demi))
+    by = (max(y0 + 0.02, cy - demi), min(y1 - 0.02, cy + demi))
+    print(f"  hauteur {h:.3f} m -> champ predit {2 * h * np.tan(FOV / 2):.3f} m de cote")
+    print(f"  zone balayee : x [{bx[0]:.3f}, {bx[1]:.3f}]  y [{by[0]:.3f}, {by[1]:.3f}]")
+
     src, dst = [], []
-    for x in np.linspace(x0 + 0.02, x1 - 0.02, GRILLE):
-        for y in np.linspace(y0 + 0.02, y1 - 0.02, GRILLE):
+    for x in np.linspace(bx[0], bx[1], GRILLE):
+        for y in np.linspace(by[0], by[1], GRILLE):
             poser_cube(ur5, field, box, x, y)
             uv = detecter_cube(ur5.get_image())
             if uv is not None:
@@ -291,8 +310,11 @@ def main():
                 dst.append((x, y))
 
     total = GRILLE * GRILLE
-    print(f"  cube visible sur {len(src)}/{total} positions "
-          f"({100 * len(src) / total:.0f} % de la table)")
+    print(f"  cube visible sur {len(src)}/{total} positions balayees "
+          f"({100 * len(src) / total:.0f} %)")
+    if len(src) / total > 0.97:
+        print("  quasi tout est visible -> le champ deborde la zone balayee,")
+        print("     augmenter DEBORD pour mesurer la vraie frontiere.")
     if len(src) < 12:
         print("  TROP PEU de points visibles pour calibrer.")
         print("  -> modifier POSE_CAMERA / ROT_CAMERA en tete de ce fichier.")
