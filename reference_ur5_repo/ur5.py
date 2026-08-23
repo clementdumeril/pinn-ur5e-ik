@@ -1066,6 +1066,22 @@ class UR5:
             H = np.array(calib["pixel_to_world_homography"])   # (3, 3)
             w = H @ np.array([u, v, 1.0])
             xreal, yreal = w[0] / w[2], w[1] / w[2]
+
+            # Correction radiale de la parallaxe.
+            # Le cube depasse au-dessus de la table, donc le centroide de ses
+            # pixels rouges est deporte VERS L'EXTERIEUR, d'autant plus qu'on
+            # s'eloigne du centre du champ (57 mm au bord). La camera etant
+            # verticale, ce deport ne depend que de la distance au centre :
+            # data_collector ajuste r_vrai = r - (a*r + b*r^2) sur ses mesures.
+            coef = calib.get("correction_radiale")
+            sol = calib.get("camera_sol_xy")
+            if coef is not None and sol is not None:
+                c = np.array(sol, dtype=float)
+                d = np.array([xreal, yreal]) - c
+                r = float(np.linalg.norm(d))
+                if r > 1e-6:
+                    r_corrige = r - (coef[0] * r + coef[1] * r * r)
+                    xreal, yreal = c + d * (r_corrige / r)
         else:                                          # calibrations anterieures
             A = np.array(calib["pixel_to_world"])      # (2, 3)
             xreal, yreal = A @ np.array([u, v, 1.0])

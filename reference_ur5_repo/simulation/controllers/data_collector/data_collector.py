@@ -363,6 +363,48 @@ def main():
             print(f"    {lo:.2f} a {lo + 0.10:.2f} m : {m.sum():3d} pts, "
                   f"median {np.median(res[m]):5.1f} mm, max {res[m].max():5.1f} mm")
 
+    # --- Correction radiale de la parallaxe --------------------------------
+    # Le cube depasse de 10 cm au-dessus de la table : le centroide des pixels
+    # rouges n'est pas au-dessus de sa position reelle. Sous la camera on ne
+    # voit que le dessus (deport nul) ; plus on s'ecarte, plus une face laterale
+    # apparait et plus le centroide glisse VERS L'EXTERIEUR -- jusqu'a 57 mm au
+    # bord du champ.
+    #
+    # La camera etant verticale, la scene est symetrique autour de l'axe
+    # optique : ce deport ne depend que de la DISTANCE au centre, pas de la
+    # direction. Un polynome en r l'absorbe donc entierement.
+    #
+    # On ajuste r_vrai = r_estime - (a*r + b*r^2) sur les 121 mesures.
+    est = P                                   # positions estimees par H seule
+    vrai = np.array(dst)
+    centre_sol = np.array([cx, cy])
+    r_est = np.linalg.norm(est - centre_sol, axis=1)
+    r_vrai = np.linalg.norm(vrai - centre_sol, axis=1)
+    ok = r_est > 1e-6
+    A = np.column_stack([r_est[ok], r_est[ok] ** 2])
+    coef, *_ = np.linalg.lstsq(A, (r_est[ok] - r_vrai[ok]), rcond=None)
+
+    # residus apres correction
+    fac = np.ones(len(est))
+    corr = coef[0] * r_est + coef[1] * r_est ** 2
+    fac[ok] = (r_est[ok] - corr[ok]) / r_est[ok]
+    est_corr = centre_sol + (est - centre_sol) * fac[:, None]
+    res2 = np.linalg.norm(est_corr - vrai, axis=1) * 1000
+    print()
+    print("  --- correction radiale de la parallaxe ---")
+    print(f"  coefficients : a = {coef[0]:+.4f}   b = {coef[1]:+.4f}")
+    print(f"  residus AVANT : median {np.median(res):5.1f} mm, max {res.max():5.1f} mm")
+    print(f"  residus APRES : median {np.median(res2):5.1f} mm, max {res2.max():5.1f} mm")
+
+    # --- Champ de vue, calcule et non plus cherche -------------------------
+    # Camera verticale : elle voit un disque de rayon h*tan(FOV/2) centre a sa
+    # verticale. Le disque inscrit est independant de la rotation de l'image,
+    # donc toujours a l'interieur du champ reel.
+    rayon = h * np.tan(FOV / 2) - MARGE
+    print()
+    print("  --- champ de vue ---")
+    print(f"  disque utilisable : centre ({cx:+.3f}, {cy:+.3f}), rayon {rayon:.3f} m")
+
     a = np.array(dst)
     zone = {'x_min': float(a[:, 0].min()) + MARGE, 'x_max': float(a[:, 0].max()) - MARGE,
             'y_min': float(a[:, 1].min()) + MARGE, 'y_max': float(a[:, 1].max()) - MARGE}
@@ -401,6 +443,11 @@ def main():
         'visible_zone_world': zone,
         'coverage': len(src) / total,
         'points_mesures': len(src),
+        'camera_sol_xy': [float(cx), float(cy)],
+        'camera_hauteur_m': float(h),
+        'rayon_utilisable_m': float(rayon),
+        'correction_radiale': [float(coef[0]), float(coef[1])],
+        'residu_median_corrige_mm': float(np.median(res2)),
         'decentrage_mm': float(np.linalg.norm(decal) * 1000),
         'inclinaison_apparente_deg': float(angle),
     }, open(os.path.join(dataset_dir, 'calibration.json'), 'w'), indent=2)
