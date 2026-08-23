@@ -748,6 +748,10 @@ class UR5:
 
             jacob: linear and angular end-effector velocities
         """
+        # Le bouclage en position de l'appel precedent a laisse les moteurs en
+        # mode position. Il faut revenir en mode vitesse, sinon setVelocity()
+        # ne ferait que plafonner la vitesse au lieu de la commander.
+        self.setup_control_mode()
         self.supervisor.step(self.timestep)
         t0 = self.supervisor.getTime()
         v0 = np.zeros(6)
@@ -843,6 +847,28 @@ class UR5:
             iterations += 1
         for joint in self.joints:
             joint.setVelocity(0)
+
+        # --- Bouclage en position -------------------------------------------
+        # La trajectoire ci-dessus est pilotee en VITESSE (setPosition(inf) dans
+        # setup_control_mode), donc en BOUCLE OUVERTE : tout retard accumule
+        # pendant le mouvement -- physique instable, gravite, couple insuffisant
+        # -- n'est jamais rattrape. Mesure sur ce monde : jusqu'a 114 mm d'ecart
+        # entre la pose commandee et la pose reellement atteinte, ce qui faussait
+        # aussi bien la saisie que la calibration de la camera.
+        #
+        # On termine donc par un asservissement en position sur les angles
+        # cibles, jusqu'a convergence.
+        for i, joint in enumerate(self.joints):
+            joint.setVelocity(1.0)
+            joint.setPosition(float(target[i]))
+
+        t_hold = self.supervisor.getTime()
+        while self.supervisor.getTime() - t_hold < 3.0:
+            self.supervisor.step(self.timestep)
+            ecart = np.max(np.abs(np.array(target) - self.get_joint_angles()))
+            if ecart < 0.002:              # ~0.1 degre sur chaque axe
+                break
+
         timef = self.supervisor.getTime()
         error = np.abs(np.array(target) -
                        self.get_joint_angles()) * 180 / np.pi

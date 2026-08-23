@@ -162,8 +162,16 @@ Beyond `pip install -r requirements.txt`, two things cannot ship in a Git reposi
   definitions (`UR5e`, `PandaHand`, `Table`, ...) from GitHub via `EXTERNPROTO`.
 
 The controllers use whichever `python` is on your PATH. If that interpreter
-lacks the dependencies, uncomment and adapt the `COMMAND` line in
-`simulation/controllers/*/runtime.ini`.
+lacks the dependencies, add a `COMMAND` line to
+`simulation/controllers/*/runtime.ini`:
+
+```ini
+[python]
+COMMAND = C:\path	o\your\python.exe
+```
+
+Note that Webots does **not** support `#` comments in `runtime.ini` — it reads
+them as unknown keys and warns about each one.
 
 ## What is *not* in this repository
 
