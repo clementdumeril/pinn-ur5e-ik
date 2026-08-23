@@ -268,10 +268,23 @@ def place_cube(ur5, field, x, y, node=None):
         ur5.supervisor.step(ur5.timestep)
 
 
-def goto(ur5, pos, rot):
+def goto(ur5, pos, rot, stabilisation=1.0):
+    """
+    Deplace le bras puis attend qu'il soit REELLEMENT immobile.
+
+    L'ancienne version attendait 20 pas de simulation, soit 0.16 s avec
+    basicTimeStep a 8 ms. Beaucoup trop court : le bras oscille encore, et la
+    pose de la camera lue juste apres ne correspond pas a celle qu'elle aura
+    pendant le balayage qui suit. Tout le modele de projection est alors cale
+    sur une pose fausse -- piste serieuse pour expliquer les 817 px de la
+    derniere calibration.
+
+    On attend maintenant une duree en temps simule, independante du pas.
+    """
     try:
         ur5.move_to_pose(list(pos), list(rot), wrist='up')
-        for _ in range(20):
+        t0 = ur5.supervisor.getTime()
+        while ur5.supervisor.getTime() - t0 < stabilisation:
             ur5.supervisor.step(ur5.timestep)
         return True
     except Exception as e:
@@ -290,6 +303,20 @@ def phase_a(ur5, field, box, cam_node):
         raise SystemExit("La pose de reference est inatteignable.")
 
     T_base = node_pose(ur5.supervisor.getSelf())
+
+    # Verifier que la camera est bien immobile avant de figer sa pose : tout le
+    # modele de projection en depend.
+    p1 = np.array(cam_node.getPosition())
+    for _ in range(25):
+        ur5.supervisor.step(ur5.timestep)
+    p2 = np.array(cam_node.getPosition())
+    derive = np.linalg.norm(p2 - p1) * 1000
+    print(f"  derive de la camera pendant 0.2 s : {derive:.2f} mm")
+    if derive > 1.0:
+        print("  camera encore en mouvement -> attente supplementaire")
+        t0 = ur5.supervisor.getTime()
+        while ur5.supervisor.getTime() - t0 < 2.0:
+            ur5.supervisor.step(ur5.timestep)
     T_cam = node_pose(cam_node)
 
     # On repere la camera par rapport a la pose COMMANDEE, pas par rapport a
@@ -331,21 +358,47 @@ def phase_a(ur5, field, box, cam_node):
     if len(obs) < 4:
         raise SystemExit("Trop peu de points visibles pour identifier la convention.")
 
+    # Score ROBUSTE.
+    #
+    # La premiere version faisait un RMS sur toutes les observations, en donnant
+    # 1e3 px aux points projetes hors cadre. Un seul suffisait a pousser le RMS
+    # au-dessus de 200 px : la bonne convention etait penalisee par les points
+    # qu'elle decrivait justement comme hors champ. Resultat, le modele etait
+    # declare non fiable (817 px) alors que la phase C mesurait 1.9 px d'accord
+    # a la pose retenue -- et la phase B basculait inutilement en empirique,
+    # ou le critere CAMERA_VERTICALE n'existe pas.
+    #
+    # On ne score donc que les points que la convention place DANS l'image, on
+    # prend la mediane (insensible aux cubes tronques au bord), et on exige
+    # qu'une majorite des detections soit expliquee : un cube detecte est
+    # forcement dans l'image, une convention qui n'en explique que quelques-uns
+    # est fausse.
     scored = []
     for name, conv in CONVENTIONS.items():
         errs = []
         for P, (u, v) in obs:
             uv = project(P, T_cam, conv)
-            errs.append(1e3 if uv is None else np.hypot(uv[0] - u, uv[1] - v))
-        scored.append((float(np.sqrt(np.mean(np.square(errs)))), name))
-    scored.sort()
-    print("  meilleures conventions :")
-    for rms, name in scored[:5]:
-        print(f"    {name:22s} RMS = {rms:8.1f} px")
+            if in_image(uv):
+                errs.append(np.hypot(uv[0] - u, uv[1] - v))
+        ratio = len(errs) / len(obs)
+        if len(errs) < 6 or ratio < 0.5:
+            continue                       # convention qui n'explique presque rien
+        scored.append((float(np.median(errs)), ratio, name))
 
-    best_err, best = scored[0]
-    print(f"  -> convention retenue : {best} ({best_err:.1f} px)")
-    reliable = best_err <= 30
+    if not scored:
+        print("  Aucune convention n'explique la majorite des detections.")
+        return None, None, None, float('inf'), False
+
+    scored.sort()
+    print("  meilleures conventions (mediane sur les points dans l'image) :")
+    for med, ratio, name in scored[:5]:
+        print(f"    {name:22s} mediane = {med:7.1f} px   "
+              f"explique {100 * ratio:3.0f} % des detections")
+
+    best_err, best_ratio, best = scored[0]
+    print(f"  -> convention retenue : {best} "
+          f"({best_err:.1f} px sur {100 * best_ratio:.0f} % des points)")
+    reliable = best_err <= 15
     if not reliable:
         print("  MODELE NON FIABLE : aucune convention ne reproduit les mesures.")
         print("  -> la phase B basculera en mode empirique (mesure reelle).")
@@ -441,6 +494,12 @@ def phase_b_empirical(ur5, field, box):
     """
     print()
     print("=== PHASE B (empirique) : mesure reelle de chaque pose ===")
+    if CAMERA_VERTICALE:
+        print("  ATTENTION : CAMERA_VERTICALE est ignore dans ce mode.")
+        print("  L'inclinaison de la camera ne peut pas etre calculee sans un")
+        print("  modele de projection valide -- on ne peut que mesurer la")
+        print("  couverture. Si l'angle obtenu ne convient pas, il faut d'abord")
+        print("  que la phase A identifie la convention d'axes.")
     cands = [
         ([-0.10, -0.68, 0.45], [PI, 0.00, -PI / 2]),
         ([-0.20, -0.64, 0.50], [PI, 0.30, -PI / 2]),
@@ -600,7 +659,7 @@ def main():
     os.makedirs(img_dir, exist_ok=True)
 
     T_cmd_cam, conv, conv_name, conv_err, reliable = phase_a(ur5, field, box, cam_node)
-    if reliable:
+    if reliable and conv is not None:
         best = phase_b(ur5, T_cmd_cam, conv)
     else:
         best = phase_b_empirical(ur5, field, box)
@@ -617,7 +676,8 @@ def main():
         # la chaine DH) et la camera. Elle est constante : la camera est vissee
         # sur le poignet. Sans elle, commander une position place un repere
         # mathematique invisible, pas l'objectif -- d'ou UR5.move_camera_to().
-        'tool_to_camera': T_cmd_cam.tolist(),
+        'tool_to_camera': T_cmd_cam.tolist() if T_cmd_cam is not None else None,
+        'camera_tilt_deg': (float(np.degrees(best['tilt'])) if 'tilt' in best else None),
         'axis_convention': conv_name,
         'axis_convention_rms_px': conv_err,
         'pixel_to_world_homography': H.tolist(),
