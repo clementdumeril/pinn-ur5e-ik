@@ -84,15 +84,15 @@ DEF table2 Table {
   size 0.9 1.6 0.9
 }
 DEF RED_BOX_PINN Solid {
-  translation -1.55 0.2 0.955
+  translation -1.55 0.2 0.93
   children [
     Shape {
       appearance PBRAppearance { baseColor 1 0 0 roughness 0.5 }
-      geometry Box { size 0.05 0.05 0.1 }
+      geometry Box { size 0.05 0.05 0.05 }
     }
   ]
   name "red_box_pinn"
-  boundingObject Box { size 0.05 0.05 0.1 }
+  boundingObject Box { size 0.05 0.05 0.05 }
   physics Physics { density 500 }
 }
 DEF BLUE_TRAY_PINN Solid {
@@ -148,15 +148,15 @@ DEF table2_math Table {
   size 0.9 1.6 0.9
 }
 DEF RED_BOX_MATH Solid {
-  translation -1.55 1.7 0.955
+  translation -1.55 1.7 0.93
   children [
     Shape {
       appearance PBRAppearance { baseColor 0 1 0 roughness 0.5 }
-      geometry Box { size 0.05 0.05 0.1 }
+      geometry Box { size 0.05 0.05 0.05 }
     }
   ]
   name "red_box_math"
-  boundingObject Box { size 0.05 0.05 0.1 }
+  boundingObject Box { size 0.05 0.05 0.05 }
   physics Physics { density 500 }
 }
 DEF BLUE_TRAY_MATH Solid {

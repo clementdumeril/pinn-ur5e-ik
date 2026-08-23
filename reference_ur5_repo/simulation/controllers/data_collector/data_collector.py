@@ -48,7 +48,8 @@ PI = np.pi
 # --- Monde ---------------------------------------------------------------
 TABLE_CENTER = (-1.5, 0.0)          # table1, repere Webots
 TABLE_SIZE = (0.8, 1.4)             # x, y
-CUBE_Z = 0.955                      # hauteur du centre du cube pose sur la table
+CUBE_Z = 0.93                       # hauteur du centre du cube pose sur la table
+                                    # (cube de 5 cm : base a 0.905, dessus de table a 0.900)
 
 # --- La pose de lecture, fixe --------------------------------------------
 # Repere robot. Le bras est deja a 0.822 m de sa base pour une portee de

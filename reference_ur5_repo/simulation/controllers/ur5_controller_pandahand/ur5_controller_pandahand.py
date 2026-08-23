@@ -104,7 +104,9 @@ APPROACH_Z = 0.40       # survol, sans risque
 # (mesure : centre du cube a z = +0.0472). Les doigts sont donc pratiquement au
 # niveau du repere 6 -- le +0.1237 de d6 dans ur5.py couvre bien la longueur de
 # l'outil. On vise desormais le centre du cube.
-GRASP_Z = 0.047         # hauteur de saisie -- remplacee si CALIBRER_HAUTEUR
+GRASP_Z = 0.030         # hauteur de saisie -- remplacee si CALIBRER_HAUTEUR
+                        # (cube ramene a 5 cm : centre a z = 0.030 en repere robot,
+                        #  contre 0.055 quand il faisait 10 cm)
 
 # Cherche automatiquement la bonne hauteur de saisie au lancement.
 # Deux tentatives de la deduire par le calcul ont echoue : la position des
@@ -114,7 +116,7 @@ GRASP_Z = 0.047         # hauteur de saisie -- remplacee si CALIBRER_HAUTEUR
 # hauteurs et on garde celle qui souleve reellement le cube.
 # Une fois la valeur connue, la recopier dans GRASP_Z et repasser a False.
 CALIBRER_HAUTEUR = True
-HAUTEURS_A_TESTER = [0.047, 0.030, 0.015, 0.000, -0.015, 0.065]
+HAUTEURS_A_TESTER = [0.030, 0.015, 0.000, 0.045, -0.015, 0.060]
 RELEASE_Z = 0.05        # hauteur de depose dans le bac
 
 FINGER_OPEN = 0.04      # course d'un doigt (m)
