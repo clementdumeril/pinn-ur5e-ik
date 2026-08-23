@@ -1214,3 +1214,81 @@ leve une erreur explicite plutot que de viser a cote :
 KeyError: 'tool_to_camera' absent de calibration.json :
 relancer le monde my_first_simulation_datagen.wbt pour le mesurer.
 ```
+
+---
+
+## 19. ✅ Etat final de la chaine de perception
+
+Les chapitres 15 a 18 racontent des approches successives, dont plusieurs ont
+ete abandonnees. Voici ce qui est reellement en place.
+
+### 19.1 Mesures
+
+| Grandeur | Debut | Final |
+| :-- | ---: | ---: |
+| Inclinaison de la camera | 17,20 deg | **0,07 deg** |
+| Derive du bras apres deplacement | 63 mm | **0,00 mm** |
+| Residu de l'homographie (median) | 38 mm (RMSE) | **1,1 mm** |
+| Residu apres correction radiale | -- | **0,9 mm** |
+| RMSE | 38,0 mm | **1,6 mm** |
+| Erreur de localisation du cube | 148 mm | **~1 mm** |
+
+La pince tolere 25 mm. La perception est donc **25 fois plus precise** que
+necessaire.
+
+### 19.2 Les cinq causes qui bloquaient
+
+1. **Commande en boucle ouverte.** `move_to_config` pilotait les moteurs en
+   vitesse puis s'arretait, sans correction : jusqu'a 114 mm d'ecart entre pose
+   commandee et pose atteinte. La trajectoire quintique se termine desormais par
+   un asservissement en position.
+
+2. **Camera penchee de 17 deg.** Le deuxieme angle de `ROT_CAMERA` etait
+   exactement son inclinaison ; le passer a 0 la redresse. Identifie en lancant
+   un rayon depuis chacun des 6 axes locaux et en regardant lequel touche la
+   table -- ce que deux ajustements numeriques successifs n'avaient pas su
+   trouver.
+
+3. **Pas de simulation trop grossier.** `basicTimeStep` au defaut de 32 ms dans
+   5 mondes sur 6 : contacts mal resolus, bras qui vibre pendant les mesures.
+   Porte a 8 ms partout.
+
+4. **Doigts de la pince non pilotes.** `init_handles()` vide `finger_joints`
+   puis parcourt cette liste vide : aucun doigt n'etait jamais commande. Ils
+   ballottaient au gre des mouvements, multipliant les contacts.
+
+5. **Cube trop haut.** 10 cm de haut sous une camera a 44 cm : le centroide des
+   pixels rouges glissait vers l'exterieur du champ, jusqu'a 56 mm au bord.
+   Ramene a 5 cm, ce qui divise le deport par deux ; l'homographie absorbe le
+   reste.
+
+### 19.3 Comment ca marche maintenant
+
+```
+image 256x256
+     |
+  seuillage rouge -> centroide en pixels
+     |
+  homographie (ajustee sur 91 mesures)
+     |
+  correction radiale (si elle ameliore d'au moins 10 %)
+     |
+  changement de repere monde -> robot
+     |
+  position (x, y) a ~1 mm pres
+```
+
+Le champ de vue n'est plus cherche mais **calcule** : sous une camera verticale
+a hauteur h avec un champ FOV, c'est un disque de rayon `h*tan(FOV/2)`, soit
+0,433 m ici. Le cube n'est tire que dans ce disque intersecte avec la table.
+
+Pour verifier de ses yeux : `View > Optional Rendering > Show Camera Frustums`
+dessine le cone de vision dans la scene.
+
+### 19.4 Ce qui reste
+
+La perception est reglee. Le maillon suivant est la **saisie** : la pince ne
+s'etait pas encore refermee correctement sur le cube lors des derniers essais.
+`ur5_controller_pandahand.py` contient de quoi diagnostiquer -- capteurs de
+position des doigts, verification que le cube a bien ete souleve, et recherche
+automatique de la hauteur de saisie (`CALIBRER_HAUTEUR`).
