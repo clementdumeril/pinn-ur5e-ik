@@ -1292,3 +1292,76 @@ s'etait pas encore refermee correctement sur le cube lors des derniers essais.
 `ur5_controller_pandahand.py` contient de quoi diagnostiquer -- capteurs de
 position des doigts, verification que le cube a bien ete souleve, et recherche
 automatique de la hauteur de saisie (`CALIBRER_HAUTEUR`).
+
+---
+
+## 20. ⏱️ Benchmark des solveurs : ce que dit la mesure
+
+### 20.1 Le scenario complet, avec le PINN actif
+
+Repartition mesuree sur un cycle pick and place :
+
+| Deplacement | Solveur |
+| :-- | :-- |
+| Pose de lecture (aller) | IK analytique -- *volontaire* |
+| Approche cube, saisie, levage | **PINN** |
+| Transport, descente bac, remontee | **PINN** |
+| Retour pose de lecture | IK analytique -- *volontaire* |
+
+**6 appels sur 8 au PINN.** Les deux exceptions sont les poses de lecture : la
+calibration pixel -> monde n'est valable qu'a la pose exacte ou elle a ete
+mesuree, et les 3,2 mm du PINN en ce point y decaleraient la camera.
+
+### 20.2 Temps de calcul, mesures sur 500 appels apres echauffement
+
+| Solveur | Moyenne | Mediane |
+| :-- | ---: | ---: |
+| **IK analytique** (`ur5.inverse_kinematics`) | **0,537 ms** | 0,454 ms |
+| **PINN** (PyTorch) | 0,676 ms | 0,573 ms |
+| **IKPY** (numerique iteratif) | **121,8 ms** | 110,7 ms |
+
+### 20.3 Ce que ces chiffres contredisent
+
+Le README et le chapitre 6 de `DOCUMENTATION.md` annoncent :
+
+> Temps moyen de calcul : ~0,50-0,85 ms pour les maths, ~0,35-0,45 ms pour le PINN
+
+**C'est faux dans les deux sens.** Le PINN n'est pas a 0,35-0,45 ms mais a
+0,676 ms, et il est **1,3x plus LENT** que la solution analytique en forme
+fermee, pas plus rapide.
+
+L'origine de l'erreur est identifiable : le premier appel au PINN coute
+4,5 ms (demarrage a froid de PyTorch) et les suivants ~0,6 ms. Mesurer sans
+echauffement et sur quelques appels donne des chiffres arbitraires. Les
+mesures ci-dessus portent sur 500 appels apres echauffement, avec
+`torch.set_num_threads(1)`.
+
+### 20.4 Le vrai argument, mesure
+
+Le PINN n'est pas plus rapide que la trigonometrie -- personne ne peut battre
+une formule fermee de quelques dizaines d'operations. En revanche :
+
+- il est **180x plus rapide qu'IKPY**, le solveur numerique iteratif de
+  reference (0,68 ms contre 122 ms) ;
+- il est **differentiable**, donc integrable dans une chaine d'apprentissage
+  de bout en bout, ce qu'aucune des deux autres methodes ne permet ;
+- il produit une solution **continue** en fonction de la cible, la ou les
+  methodes analytiques sautent d'une branche a l'autre parmi les 8 solutions.
+
+C'est cela qu'il faut defendre, pas un gain de vitesse qui n'existe pas.
+
+### 20.5 Precision, pour completer
+
+Erreur de position du PINN sur les points reels du scenario :
+
+| Point | Erreur |
+| :-- | ---: |
+| Approche cube | 0,45 mm |
+| **Saisie du cube** | **0,30 mm** |
+| Depose bac | 7,39 mm |
+| Approche bac | 10,92 mm |
+
+Les points au-dessus du bac sont hors de la zone d'entrainement en x
+(`x = -0,20` pour une plage `[0 ; 0,4]`), d'ou l'ecart. Sans consequence pour
+lacher un cube dans un plateau, mais c'est la limite du modele : il extrapole
+mal, comme tout reseau.
