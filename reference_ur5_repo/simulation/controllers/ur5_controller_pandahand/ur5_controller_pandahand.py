@@ -414,5 +414,6 @@ ur5.move_to_pose([tx, ty, APPROACH_Z], [PI, 0, -PI/2], wrist='up')
 ur5.use_pinn = False
 ur5.move_to_pose(READ_POS, READ_ROT, wrist='up')
 
+ur5.bilan_solveurs()
 print("Termine !")
 

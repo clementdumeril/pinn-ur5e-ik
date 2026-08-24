@@ -513,6 +513,10 @@ class UR5:
         # `model` ci-dessous. Rien de couteux ne se produit ici.
         self._model = _MODEL_NOT_LOADED
         self._calib = None
+        # Compteurs des deux solveurs, pour pouvoir verifier apres coup lequel a
+        # reellement travaille au lieu de le deduire des messages de la console.
+        self.n_pinn = 0
+        self.n_analytique = 0
 
         self.use_pinn = True
         self.pinn_model = None
@@ -902,12 +906,17 @@ class UR5:
         start_time_ik = time.perf_counter()
         
         if self.use_pinn and self.pinn_model is not None:
+            self.n_pinn += 1
             print(f"🧠 [PINN AI] Activation du réseau neuronal pour atteindre {pos} !")
             with torch.no_grad():
                 pos_tensor = torch.tensor([[pos[0], pos[1], pos[2]]], dtype=torch.float32)
                 pred = self.pinn_model(pos_tensor).numpy()[0]
                 q_list = list(pred)
         else:
+            self.n_analytique += 1
+            if self.use_pinn and self.pinn_model is None:
+                print("⚠️  [PINN] use_pinn est actif mais AUCUN modele n'est charge "
+                      "-> repli silencieux sur l'IK analytique.")
             print(f"📐 [IK Analytique] Calcul cinématique classique vers {pos}...")
             q_list = inverse_kinematics(T, shoulder=shoulder, wrist=wrist, elbow="up")
             
@@ -934,6 +943,24 @@ class UR5:
             angle_err, pos_err = matrix_error(T, gt)
             print("Erro angular: ", angle_err, " graus")
             print("Erro posicional: ", pos_err, " mm")
+
+    def bilan_solveurs(self):
+        """Recapitule qui a resolu la cinematique inverse, et combien de fois."""
+        t = self.n_pinn + self.n_analytique
+        print()
+        print("=== BILAN DES SOLVEURS ===")
+        if t == 0:
+            print("  aucun deplacement cartesien effectue")
+            return
+        print(f"  PINN (reseau)   : {self.n_pinn:2d} / {t}  "
+              f"({100 * self.n_pinn / t:.0f} %)")
+        print(f"  IK analytique   : {self.n_analytique:2d} / {t}  "
+              f"({100 * self.n_analytique / t:.0f} %)")
+        if self.n_pinn == 0:
+            print("  -> le PINN n'a JAMAIS ete appele.")
+        elif self.n_analytique:
+            print("  -> les deplacements analytiques sont les poses de lecture,")
+            print("     volontairement exclues du PINN (voir le controleur).")
 
     def actuate_gripper(self, close=0, duration=2):
         """
