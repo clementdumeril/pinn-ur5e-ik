@@ -29,9 +29,18 @@ VISION_MODE = "color"
 # ---------------------------------------------------------
 # ARGUMENTS POUR LA SIMULATION COMPARATIVE
 # ---------------------------------------------------------
+# Webots passe toujours au moins un argument, et les mondes mono-robot y
+# laissent une chaine VIDE (controllerArgs [ "" ]). L'ancien test
+# `if len(sys.argv) > 1` la prenait donc pour un mode, mode devenait "",
+# different de "pinn", et use_pinn restait a False : le PINN etait charge en
+# memoire mais JAMAIS appele. Toute la demo tournait sur l'IK analytique.
+# On ignore desormais les arguments vides.
 mode = "pinn"
-if len(sys.argv) > 1:
-    mode = sys.argv[1].lower()
+if len(sys.argv) > 1 and sys.argv[1].strip():
+    mode = sys.argv[1].strip().lower()
+
+print(f"[Mode] Solveur de cinematique inverse : "
+      f"{'PINN (reseau de neurones)' if mode == 'pinn' else 'IK analytique'}")
 
 # Affichage du titre selon le robot
 if mode == "pinn":
@@ -304,7 +313,12 @@ ur5.move_to_config([0, 0, 0, 0, 0, 0])
 # ============================================================
 # Pose de lecture camera
 # ============================================================
-ur5.use_pinn = False  # On utilise les maths classiques (sures) pour placer la camera en l'air
+# La pose de lecture reste en IK analytique, deliberement.
+# La calibration pixel -> monde n'est valable qu'a la pose EXACTE ou elle a ete
+# mesuree ; le PINN y ferait 3,2 mm d'erreur (ce point est hors de sa zone
+# d'entrainement en x), ce qui decalerait la camera et fausserait la vision.
+# Le PINN prend le relais pour la saisie, ou il est chez lui : 0,30 mm.
+ur5.use_pinn = False
 actuate_panda(close=False)
 ur5.move_to_pose(READ_POS, READ_ROT, wrist='up')
 
