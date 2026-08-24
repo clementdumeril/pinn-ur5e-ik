@@ -2,6 +2,8 @@ import os
 import sys
 from math import pi
 
+import numpy as np
+
 REPO_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
 if REPO_DIR not in sys.path:
     sys.path.insert(0, REPO_DIR)
@@ -24,6 +26,12 @@ ur5 = UR5()
 #                perception, c'est la verite terrain -- utile pour isoler les
 #                problemes d'IK sans melanger avec ceux de vision.
 VISION_MODE = "color"
+
+# Mesure de l'erreur reelle du PINN dans Webots, en comparant les poses
+# atteintes avec le PINN et avec l'IK analytique sur les memes cibles.
+# Allonge le lancement de quelques dizaines de secondes ; a activer quand on
+# veut un chiffre defendable, pas a chaque demo.
+MESURER_ERREUR_PINN = True
 
 
 # ---------------------------------------------------------
@@ -245,6 +253,80 @@ def calibrer_hauteur_saisie(cx, cy):
     return None
 
 
+def pose_reelle():
+    """
+    Position monde du repere 6, telle que le moteur physique la donne.
+
+    Ce n'est pas le bout de la chaine DH (le noeud est 10,34 cm plus loin),
+    mais peu importe : on ne s'en sert que pour COMPARER deux poses, et le
+    decalage s'annule dans la difference.
+    """
+    n = ur5.supervisor.getFromDef("frame6")
+    return None if n is None else np.array(n.getPosition())
+
+
+def mesurer_erreur_pinn(cibles):
+    """
+    Erreur du PINN mesuree sur le robot, pas sur son modele.
+
+    Pour chaque cible : on y va avec l'IK analytique, on releve la pose reelle,
+    puis on refait le trajet avec le PINN et on releve a nouveau. L'IK
+    analytique etant une forme fermee exacte, l'ecart entre les deux poses est
+    l'erreur du PINN telle que le robot la realise.
+
+    On mesure aussi la repetabilite du bras (meme cible, meme solveur, deux
+    fois) : sans elle on ne saurait pas si un ecart vient du reseau ou du
+    controle.
+    """
+    print()
+    print("=== ERREUR REELLE DU PINN (mesuree dans Webots) ===")
+    if pose_reelle() is None:
+        print("  DEF frame6 introuvable, mesure impossible.")
+        return
+
+    neutre = [0, -PI / 3, PI / 2, -PI / 6, -PI / 2, 0]
+    rot = [PI, 0, -PI / 2]
+    resultats = []
+
+    for nom, cible in cibles:
+        # meme point de depart pour les deux essais, sinon la trajectoire
+        # differe et on mesurerait autre chose que le solveur
+        ur5.move_to_config(neutre)
+        ur5.use_pinn = False
+        ur5.move_to_pose(list(cible), rot, wrist='up')
+        p_math = pose_reelle()
+
+        ur5.move_to_config(neutre)
+        ur5.use_pinn = False
+        ur5.move_to_pose(list(cible), rot, wrist='up')
+        p_repet = pose_reelle()          # repetabilite : meme solveur, 2e fois
+
+        ur5.move_to_config(neutre)
+        ur5.use_pinn = True
+        ur5.move_to_pose(list(cible), rot, wrist='up')
+        p_pinn = pose_reelle()
+
+        err = np.linalg.norm(p_pinn - p_math) * 1000
+        rep = np.linalg.norm(p_repet - p_math) * 1000
+        resultats.append((nom, cible, err, rep))
+        print(f"  {nom:18s} {str(tuple(round(v, 3) for v in cible)):24s} "
+              f"erreur {err:6.2f} mm   (repetabilite {rep:.2f} mm)")
+
+    if resultats:
+        e = np.array([r[2] for r in resultats])
+        r = np.array([r[3] for r in resultats])
+        print()
+        print(f"  erreur PINN     : moyenne {e.mean():.2f} mm, max {e.max():.2f} mm")
+        print(f"  repetabilite    : moyenne {r.mean():.2f} mm")
+        print("  -> la repetabilite est le plancher : une erreur du meme ordre")
+        print("     ne serait pas attribuable au reseau.")
+    # Les 12 deplacements de la campagne ne font pas partie du scenario :
+    # on remet les compteurs a zero pour que le bilan final reste lisible.
+    ur5.n_pinn = 0
+    ur5.n_analytique = 0
+    ur5.use_pinn = (mode == "pinn")
+
+
 def actuate_panda(close=False):
     """
     Ouvre ou ferme la PandaHand, en attendant la duree reellement necessaire.
@@ -374,6 +456,17 @@ else:
 
 print(f"Cube: ({cx:.3f}, {cy:.3f}) | Zone bleue: ({tx:.3f}, {ty:.3f})")
 print("Lancement pick & place...")
+
+# ============================================================
+# MESURE (optionnelle) DE L'ERREUR REELLE DU PINN
+# ============================================================
+if MESURER_ERREUR_PINN and ur5.pinn_model is not None:
+    mesurer_erreur_pinn([
+        ("approche cube", (cx, cy, APPROACH_Z)),
+        ("saisie cube", (cx, cy, GRASP_Z)),
+        ("approche bac", (tx, ty, APPROACH_Z)),
+        ("depose bac", (tx, ty, RELEASE_Z)),
+    ])
 
 # ============================================================
 # PICK - Saisie top-down avec PandaHand
