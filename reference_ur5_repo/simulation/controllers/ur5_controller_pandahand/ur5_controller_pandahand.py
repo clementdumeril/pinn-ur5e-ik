@@ -458,17 +458,6 @@ print(f"Cube: ({cx:.3f}, {cy:.3f}) | Zone bleue: ({tx:.3f}, {ty:.3f})")
 print("Lancement pick & place...")
 
 # ============================================================
-# MESURE (optionnelle) DE L'ERREUR REELLE DU PINN
-# ============================================================
-if MESURER_ERREUR_PINN and ur5.pinn_model is not None:
-    mesurer_erreur_pinn([
-        ("approche cube", (cx, cy, APPROACH_Z)),
-        ("saisie cube", (cx, cy, GRASP_Z)),
-        ("approche bac", (tx, ty, APPROACH_Z)),
-        ("depose bac", (tx, ty, RELEASE_Z)),
-    ])
-
-# ============================================================
 # PICK - Saisie top-down avec PandaHand
 # ============================================================
 if mode == "pinn":
@@ -508,5 +497,32 @@ ur5.use_pinn = False
 ur5.move_to_pose(READ_POS, READ_ROT, wrist='up')
 
 ur5.bilan_solveurs()
+
+# ============================================================
+# MESURE (optionnelle) DE L'ERREUR REELLE DU PINN
+# ============================================================
+# Placee APRES le scenario, et non avant.
+# La campagne descend trois fois a la position du cube, pince ouverte, en
+# repassant par la posture neutre entre chaque essai : le bras finissait par
+# bousculer le cube. La demo visait alors les coordonnees relevees par la
+# camera AVANT la campagne, c'est-a-dire un endroit ou l'objet n'etait plus --
+# ce qui donnait l'impression que le PINN n'arrivait pas a l'atteindre.
+#
+# Le cube est en outre remis a sa place de depart avant de commencer, pour que
+# les cibles mesurees correspondent bien a celles du scenario.
+if MESURER_ERREUR_PINN and ur5.pinn_model is not None:
+    _box = ur5.bottle
+    if _box is not None:
+        _box.getField("translation").setSFVec3f([-1.55, 0.2, 0.93])
+        _box.resetPhysics()
+        for _ in range(20):
+            ur5.supervisor.step(ur5.timestep)
+    mesurer_erreur_pinn([
+        ("approche cube", (cx, cy, APPROACH_Z)),
+        ("saisie cube", (cx, cy, GRASP_Z)),
+        ("approche bac", (tx, ty, APPROACH_Z)),
+        ("depose bac", (tx, ty, RELEASE_Z)),
+    ])
+
 print("Termine !")
 
