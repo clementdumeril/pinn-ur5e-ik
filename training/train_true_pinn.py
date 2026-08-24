@@ -100,6 +100,12 @@ def train():
     # 3. Le Moteur de Physique (Forward Kinematics en PyTorch)
     fk_engine = UR5ForwardKinematicsPyTorch()
 
+    # Longueur caracteristique de l'outil (m). Elle convertit une erreur
+    # de rotation, sans dimension, en un deplacement equivalent au bord de
+    # la pince : sans cela les deux termes de la perte physique ne seraient
+    # pas comparables, l'un etant en metres carres et l'autre pas.
+    R_OUTIL = 0.05
+
     epochs = 100
     best_err = float('inf')
 
@@ -121,8 +127,29 @@ def train():
             
             # 3. VERITABLE PINN : On passe les angles dans le simulateur PyTorch
             # pour voir où le bout du bras atterrit !
-            pred_pos = fk_engine.forward_pos(pred_q)
-            loss_phys = mse(pred_pos, bx)
+            T_pred = fk_engine.forward(pred_q)
+            T_ref = fk_engine.forward(by)
+
+            # 3a. Position : le bout du bras est-il au bon endroit ?
+            loss_pos = mse(T_pred[:, :3, 3], bx)
+
+            # 3b. Orientation : la pince pointe-t-elle dans la bonne direction ?
+            #
+            # Sans ce terme la perte est AVEUGLE a l orientation : faire tourner
+            # q6 de 180 deg ne deplace le point d aucun micron mais retourne la
+            # pince, et les deux poses obtiennent exactement le meme score.
+            #
+            # On compare a FK(reference) plutot qu a une matrice reconstruite :
+            # les deux passent par la MEME cinematique directe, donc aucune
+            # convention d angles d Euler ne peut fausser la comparaison.
+            # Norme de Frobenius plutot que distance geodesique : celle-ci
+            # ferait intervenir un arccos dont le gradient diverge pres de zero,
+            # la ou le reseau doit justement converger.
+            loss_rot = mse(T_pred[:, :3, :3], T_ref[:, :3, :3])
+
+            # 3c. Les deux termes n ont pas la meme dimension : on ramene la
+            # rotation a un deplacement equivalent au bord de l outil.
+            loss_phys = loss_pos + (R_OUTIL ** 2) * loss_rot
             
             # 4. On additionne (La Physique est 10x plus importante)
             loss = 0.1 * loss_data + 1.0 * loss_phys
@@ -135,10 +162,20 @@ def train():
         model.eval()
         with torch.no_grad():
             val_pred = model(X_val_t)
-            val_pos = fk_engine.forward_pos(val_pred)
+            T_val = fk_engine.forward(val_pred)
+            T_ref_val = fk_engine.forward(y_val_t)
             
             # Erreur spatiale absolue en millimètres (MSE de la Physics Loss pure)
-            dist_err_mm = torch.mean(torch.norm(val_pos - X_val_t, dim=1)).numpy() * 1000.0
+            dist_err_mm = torch.mean(
+                torch.norm(T_val[:, :3, 3] - X_val_t, dim=1)).numpy() * 1000.0
+
+            # Erreur d orientation, en degres. Ici l arccos est permis : c est
+            # une mesure, pas une perte, son gradient n a aucune importance.
+            R_res = torch.bmm(T_ref_val[:, :3, :3].transpose(1, 2),
+                              T_val[:, :3, :3])
+            cos = ((R_res[:, 0, 0] + R_res[:, 1, 1] + R_res[:, 2, 2]) - 1.0) / 2.0
+            rot_err_deg = torch.rad2deg(
+                torch.acos(cos.clamp(-1.0, 1.0))).mean().item()
             
             angle_mse = mse(val_pred, y_val_t).item()
 
@@ -151,7 +188,9 @@ def train():
             for g in optimizer.param_groups: g['lr'] = 2e-5
 
         lr = optimizer.param_groups[0]['lr']
-        print(f"Ep {epoch+1:03d}/{epochs} | Physics Error: {dist_err_mm:.3f} mm | Data Loss (Angles): {angle_mse:.5f} | LR: {lr:.1e}")
+        print(f"Ep {epoch+1:03d}/{epochs} | Position: {dist_err_mm:6.3f} mm | "
+              f"Orientation: {rot_err_deg:6.3f} deg | "
+              f"Angles: {angle_mse:.5f} | LR: {lr:.1e}")
 
         if dist_err_mm < best_err:
             best_err = dist_err_mm
