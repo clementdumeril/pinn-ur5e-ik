@@ -36,7 +36,7 @@ Le système complet s'articule autour de trois composants interconnectés :
 
 ### Étape 2 : Inférence Cinématique (True PINN)
 - La coordonnée $(X,Y,Z)$ est transmise au modèle `PINN6DOF` entraîné (`pinn_model_true_physics.pth`).
-- Le réseau de neurones réalise un unique passage avant (Forward Pass) en moins de **0.45 milliseconde** et renvoie les 6 angles optimaux $(q_1, q_2, q_3, q_4, q_5, q_6)$.
+- Le réseau de neurones réalise un unique passage avant (Forward Pass) en **0,25 ms** (médiane, après échauffement) et renvoie les 6 angles $(q_1, ..., q_6)$. Voir le chapitre 6 pour le détail des mesures.
 
 ### Étape 3 : Exécution & Saisie (Simulation Webots)
 - Les angles sont convertis en trajectoire polynomiale fluide (`ur5.move_to_config`).
@@ -114,9 +114,31 @@ python training/train_true_pinn.py
 
 ## 📈 6. Résultats et Comparatif de Performance
 
-| Critère | Méthode Mathématique (IKPY) | True PINN (IA Physique) |
-| :--- | :---: | :---: |
-| **Temps moyen de calcul** | ~0.50 ms - 0.85 ms | **~0.35 ms - 0.45 ms** |
-| **Régularité des trajectoires** | Sauts de branche possibles (8 sol) | **Trajectoire continue et lisse** |
-| **Différentiabilité** | Non | **Oui (Autograd PyTorch)** |
-| **Sensibilité aux singularités** | Élevée (Blocage matriciel) | **Absente (Inférence continue)** |
+Mesures sur 1000 appels chronométrés, après 200 appels d'échauffement jetés,
+un seul thread, sur 300 cibles atteignables tirées dans la zone d'entraînement.
+
+| Critère | IKPY (itératif) | Analytique en forme fermée | **True PINN** |
+| :--- | ---: | ---: | ---: |
+| **Temps médian** | 45,0 ms | **0,223 ms** | 0,248 ms |
+| Temps moyen | 56,4 ms | 0,280 ms | 0,322 ms |
+| Erreur au point de saisie | — | exacte | **0,30 mm** |
+| Différentiable | Non | Non | **Oui** |
+| Continu en fonction de la cible | Non (8 branches) | Non (8 branches) | **Oui** |
+
+> **À lire honnêtement.** Le PINN n'est **pas** plus rapide que la solution
+> analytique en forme fermée : il est 11 % plus lent, et aucun réseau de
+> neurones ne battra quelques dizaines d'opérations trigonométriques. Le
+> premier appel coûte en outre ~4,5 ms, le temps que PyTorch démarre.
+
+Ce que le PINN apporte réellement, et ce que ce projet démontre :
+
+- **182× plus rapide qu'IKPY**, le solveur numérique itératif qu'il remplace
+  effectivement — 0,25 ms contre 45 ms ;
+- **différentiable**, donc intégrable dans une chaîne d'apprentissage de bout
+  en bout, ce qu'aucune des deux autres méthodes ne permet ;
+- **continu** en fonction de la position cible, là où les méthodes analytiques
+  sautent entre leurs 8 branches de solution.
+
+Une version antérieure de ce tableau annonçait 0,35-0,45 ms pour le PINN contre
+0,50-0,85 ms pour les maths. Ces chiffres avaient été relevés sans échauffement
+et sur quelques appels : ils étaient faux dans les deux sens.

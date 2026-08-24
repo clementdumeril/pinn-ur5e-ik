@@ -14,7 +14,7 @@ An end-to-end robotic automation and inverse kinematics (IK) solver for the **Un
 ## 📌 Key Highlights
 
 - **🧠 True Physics-Informed Loss**: Trained with a hybrid loss function incorporating a differentiable PyTorch Forward Kinematics (FK) model ($\mathcal{L}_{total} = 0.1 \cdot \mathcal{L}_{data} + 1.0 \cdot \mathcal{L}_{phys}$).
-- **⚡ Sub-Millisecond Execution**: Instantaneous IK predictions (~0.44 ms), bypassing traditional iterative numerical matrix solvers.
+- **⚡ Sub-Millisecond Execution**: IK predictions in **0.25 ms** (median, warm), **182× faster than the iterative numerical solver** it replaces (IKPY, 45 ms).
 - **👁️ Vision & Actuation Integration**: Integrates visual target detection with automated top-down parallel-jaw grasping using the Franka Emika PandaHand.
 
 ---
@@ -138,12 +138,34 @@ Press **Play** in Webots to observe two UR5e robots operating simultaneously:
 
 ## 📊 Performance Benchmarks
 
-| Metric | Analytic IKPY (Matrix) | True PINN Neural Net |
-| :--- | :---: | :---: |
-| **Average Compute Time** | ~0.50 ms – 0.85 ms | **~0.35 ms – 0.45 ms** |
-| **Solution Consistency** | Variable (8 multi-sol branch flips) | **Deterministic & Smooth** |
-| **Differentiability** | ❌ Non-differentiable | **✅ Fully Differentiable** |
-| **Execution Rate** | High CPU overhead | **Minimal Tensor Forward Pass** |
+Measured over 1000 timed calls, after discarding 200 warm-up calls, single
+thread, on 300 reachable targets drawn from the training workspace.
+
+| Metric | IKPY (iterative) | Closed-form analytic | **True PINN** |
+| :--- | ---: | ---: | ---: |
+| **Median compute time** | 45.0 ms | **0.223 ms** | 0.248 ms |
+| Mean compute time | 56.4 ms | 0.280 ms | 0.322 ms |
+| Position error at grasp point | — | exact | **0.30 mm** |
+| Differentiable | ❌ | ❌ | **✅** |
+| Continuous in the target | ❌ (8 branch flips) | ❌ (8 branch flips) | **✅** |
+
+**Read this table honestly.** The PINN is **not** faster than the closed-form
+analytic solution — it is 11 % slower, and no neural network will beat a few
+dozen trigonometric operations. The first call additionally costs ~4.5 ms while
+PyTorch warms up.
+
+What the PINN *does* buy, and what this project demonstrates:
+
+- **182× faster than IKPY**, the iterative numerical solver it actually
+  replaces — 0.25 ms against 45 ms;
+- **differentiable**, so it can sit inside an end-to-end learning pipeline,
+  which neither of the other two methods allows;
+- **continuous** in the target position, where analytic solvers jump between
+  their 8 solution branches.
+
+An earlier version of this table claimed 0.35–0.45 ms for the PINN against
+0.50–0.85 ms for the analytic solver. That was measured without warm-up on a
+handful of calls, and was wrong in both directions.
 
 ---
 

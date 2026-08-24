@@ -514,10 +514,9 @@ soutenance ou une mise en ligne publique.
    entraîné avec le **DH complet** — c'est le bon choix, mais mieux vaut le dire
    explicitement pour éviter la confusion.
 
-6. **Les chiffres du benchmark** (`~0.44 ms` vs `~0.50–0.85 ms`) sortent de
-   `time.perf_counter()` sur des appels uniques, non moyennés et sans warm-up
-   PyTorch. L'ordre de grandeur est juste, la précision affichée à trois décimales ne
-   l'est pas. Pour un rapport : moyenner sur 1000 itérations après warm-up.
+6. **Les chiffres du benchmark étaient faux** — mesurés sans échauffement, sur
+   quelques appels. ✅ Corrigé : voir le chapitre 20 pour les mesures réelles
+   (1000 appels après 200 d'échauffement jetés).
 
 ---
 
@@ -1297,9 +1296,7 @@ automatique de la hauteur de saisie (`CALIBRER_HAUTEUR`).
 
 ## 20. ⏱️ Benchmark des solveurs : ce que dit la mesure
 
-### 20.1 Le scenario complet, avec le PINN actif
-
-Repartition mesuree sur un cycle pick and place :
+### 20.1 Repartition sur le scenario complet
 
 | Deplacement | Solveur |
 | :-- | :-- |
@@ -1312,47 +1309,42 @@ Repartition mesuree sur un cycle pick and place :
 calibration pixel -> monde n'est valable qu'a la pose exacte ou elle a ete
 mesuree, et les 3,2 mm du PINN en ce point y decaleraient la camera.
 
-### 20.2 Temps de calcul, mesures sur 500 appels apres echauffement
+### 20.2 Temps de calcul
 
-| Solveur | Moyenne | Mediane |
-| :-- | ---: | ---: |
-| **IK analytique** (`ur5.inverse_kinematics`) | **0,537 ms** | 0,454 ms |
-| **PINN** (PyTorch) | 0,676 ms | 0,573 ms |
-| **IKPY** (numerique iteratif) | **121,8 ms** | 110,7 ms |
+Protocole : 1000 appels chronometres, **apres 200 appels d'echauffement jetes**,
+`torch.set_num_threads(1)`, sur 300 cibles atteignables tirees dans la zone
+d'entrainement.
 
-### 20.3 Ce que ces chiffres contredisent
+| Solveur | Mediane | Moyenne | p95 |
+| :-- | ---: | ---: | ---: |
+| **IK analytique** (forme fermee) | **0,223 ms** | 0,280 ms | 0,562 ms |
+| **PINN** (PyTorch) | 0,248 ms | 0,322 ms | 0,706 ms |
+| **IKPY** (numerique iteratif) | 45,0 ms | 56,4 ms | 114,8 ms |
 
-Le README et le chapitre 6 de `DOCUMENTATION.md` annoncent :
+L'echauffement est indispensable : le **premier** appel au PINN coute ~4,5 ms,
+le temps que PyTorch initialise ses noyaux de calcul. Le mesurer sans le jeter
+fausse tout -- c'est l'erreur qu'on avait faite deux fois, dans les deux sens.
 
-> Temps moyen de calcul : ~0,50-0,85 ms pour les maths, ~0,35-0,45 ms pour le PINN
+### 20.3 Ce que ces chiffres disent
 
-**C'est faux dans les deux sens.** Le PINN n'est pas a 0,35-0,45 ms mais a
-0,676 ms, et il est **1,3x plus LENT** que la solution analytique en forme
-fermee, pas plus rapide.
+**Le PINN n'est pas plus rapide que la trigonometrie.** Il est 11 % plus lent
+que la forme fermee, et c'est normal : aucun reseau ne battra quelques dizaines
+d'operations trigonometriques.
 
-L'origine de l'erreur est identifiable : le premier appel au PINN coute
-4,5 ms (demarrage a froid de PyTorch) et les suivants ~0,6 ms. Mesurer sans
-echauffement et sur quelques appels donne des chiffres arbitraires. Les
-mesures ci-dessus portent sur 500 appels apres echauffement, avec
-`torch.set_num_threads(1)`.
+Le README et `DOCUMENTATION.md` annoncaient 0,35-0,45 ms pour le PINN contre
+0,50-0,85 ms pour les maths. C'etait faux dans les deux sens. **Les deux
+documents ont ete corriges.**
 
 ### 20.4 Le vrai argument, mesure
 
-Le PINN n'est pas plus rapide que la trigonometrie -- personne ne peut battre
-une formule fermee de quelques dizaines d'operations. En revanche :
+- **182x plus rapide qu'IKPY** (0,25 ms contre 45 ms), le solveur numerique
+  iteratif qu'il remplace effectivement ;
+- **differentiable**, donc integrable dans une chaine d'apprentissage de bout
+  en bout, ce qu'aucune des deux autres methodes ne permet ;
+- **continu** en fonction de la cible, la ou les methodes analytiques sautent
+  entre leurs 8 branches.
 
-- il est **180x plus rapide qu'IKPY**, le solveur numerique iteratif de
-  reference (0,68 ms contre 122 ms) ;
-- il est **differentiable**, donc integrable dans une chaine d'apprentissage
-  de bout en bout, ce qu'aucune des deux autres methodes ne permet ;
-- il produit une solution **continue** en fonction de la cible, la ou les
-  methodes analytiques sautent d'une branche a l'autre parmi les 8 solutions.
-
-C'est cela qu'il faut defendre, pas un gain de vitesse qui n'existe pas.
-
-### 20.5 Precision, pour completer
-
-Erreur de position du PINN sur les points reels du scenario :
+### 20.5 Precision sur les points reels du scenario
 
 | Point | Erreur |
 | :-- | ---: |
@@ -1362,6 +1354,5 @@ Erreur de position du PINN sur les points reels du scenario :
 | Approche bac | 10,92 mm |
 
 Les points au-dessus du bac sont hors de la zone d'entrainement en x
-(`x = -0,20` pour une plage `[0 ; 0,4]`), d'ou l'ecart. Sans consequence pour
-lacher un cube dans un plateau, mais c'est la limite du modele : il extrapole
-mal, comme tout reseau.
+(`x = -0,20` pour une plage `[0 ; 0,4]`) : le reseau y extrapole, comme tout
+reseau. Sans consequence pour lacher un cube dans un plateau.
