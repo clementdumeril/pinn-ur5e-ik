@@ -115,12 +115,16 @@ GRASP_Z = 0.030         # hauteur de saisie -- remplacee si CALIBRER_HAUTEUR
 # plus loin que le bout de la chaine). On la MESURE donc : on essaie plusieurs
 # hauteurs et on garde celle qui souleve reellement le cube.
 # Une fois la valeur connue, la recopier dans GRASP_Z et repasser a False.
-CALIBRER_HAUTEUR = True
+# La recherche a converge du premier coup sur 0.030, valeur desormais en dur
+# dans GRASP_Z. Repasser a True si le cube ou la pince changent.
+CALIBRER_HAUTEUR = False
 HAUTEURS_A_TESTER = [0.030, 0.015, 0.000, 0.045, -0.015, 0.060]
 RELEASE_Z = 0.05        # hauteur de depose dans le bac
 
 FINGER_OPEN = 0.04      # course d'un doigt (m)
 FINGER_SPEED = 0.1      # vitesse imposee plus haut par setVelocity (m/s)
+EPAISSEUR_DOIGT_MM = 7.4  # retrait de la face interne de chaque doigt par
+                          # rapport a la position lue par son capteur
 
 
 def hauteur_cube():
@@ -262,8 +266,14 @@ def actuate_panda(close=False):
                 print("[Pince] Les doigts se sont fermes A VIDE -> le cube "
                       "n'etait pas entre eux.")
             else:
+                # Les capteurs donnent la COURSE de chaque doigt, pas l'ecart
+                # entre leurs faces internes : celles-ci sont en retrait
+                # d'environ 7,4 mm chacune (mesure sur un cube de 50 mm serre
+                # avec une somme de course de 65 mm). On retranche donc cette
+                # epaisseur pour annoncer une largeur d'objet exploitable.
+                largeur = 1000 * (o1 + o2) - 2 * EPAISSEUR_DOIGT_MM
                 print(f"[Pince] Les doigts serrent un objet de "
-                      f"{1000 * (o1 + o2):.0f} mm (cube attendu : 50 mm).")
+                      f"{largeur:.0f} mm (course totale {1000 * (o1 + o2):.0f} mm).")
 
 # ---------------------------------------------------------
 # POSE DE LECTURE CAMERA
