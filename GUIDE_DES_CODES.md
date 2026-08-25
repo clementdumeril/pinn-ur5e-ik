@@ -1356,3 +1356,378 @@ documents ont ete corriges.**
 Les points au-dessus du bac sont hors de la zone d'entrainement en x
 (`x = -0,20` pour une plage `[0 ; 0,4]`) : le reseau y extrapole, comme tout
 reseau. Sans consequence pour lacher un cube dans un plateau.
+
+---
+
+## 21. 🧠 Le cœur du projet : construction et entraînement du PINN IK
+
+Ce chapitre répond à trois questions posées après la démo réussie :
+**quelle partie du scénario utilise le PINN**, **pourquoi le bras avance
+lentement**, et surtout **comment le réseau a été construit et entraîné**.
+
+### 21.1 Qui fait quoi dans le scénario
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Pose de lecture (aller)          📐 IK ANALYTIQUE       │  <- volontaire
+├─────────────────────────────────────────────────────────────┤
+│  2. Approche au-dessus du cube       🧠 PINN                │
+│  3. Descente sur le cube             🧠 PINN                │
+│  4. Levage                           🧠 PINN                │
+│  5. Transport vers le bac            🧠 PINN                │
+│  6. Descente dans le bac             🧠 PINN                │
+│  7. Remontée                         🧠 PINN                │
+├─────────────────────────────────────────────────────────────┤
+│  8. Retour pose de lecture           📐 IK ANALYTIQUE       │  <- volontaire
+└─────────────────────────────────────────────────────────────┘
+```
+
+**6 appels sur 8 au PINN.** Les deux exceptions sont un choix d'ingénieur, pas
+une limitation : l'homographie pixel → monde n'est valable qu'à la pose
+**exacte** où elle a été mesurée. Le PINN y ferait 3,2 mm d'erreur — ce point
+est hors de sa zone d'entraînement en `x` — et ces 3,2 mm décaleraient la
+caméra, dégradant une vision qu'on a amenée à 1 mm. Chaque solveur là où il est
+le meilleur.
+
+À noter : **la vision n'est pas un réseau de neurones**. C'est le seuillage
+couleur du chapitre 17. Le VGG16 existe mais reste débranché
+(`VISION_MODE = "color"`).
+
+Le basculement se fait dans `move_to_pose()` (`ur5.py:888`), qui incrémente au
+passage les compteurs `n_pinn` / `n_analytique` affichés par `bilan_solveurs()`.
+
+### 21.2 Pourquoi le bras avance lentement
+
+Rien à voir avec le PINN, qui calcule en 1 ms. C'est une **règle de vitesse
+écrite en dur** dans `move_to_config` (`ur5.py:768`) :
+
+```python
+if duration is None:
+    duration = np.max(np.abs(qf - q0)) * (4 / (0.5 * PI))   # 4 s pour 90 deg
+    if duration < 1.5:
+        duration = 1.5
+```
+
+Soit **4 secondes pour 90°** du plus grand déplacement articulaire :
+
+| Déplacement articulaire max | Durée |
+| ---: | ---: |
+| 30° | 1,50 s (plancher) |
+| 60° | 2,67 s |
+| 90° | 4,00 s |
+| 120° | 5,33 s |
+| 180° | 8,00 s |
+
+S'y ajoute **jusqu'à 3 s de bouclage en position** par déplacement
+(`ur5.py:869`), que j'ai ajouté pour corriger les 114 mm d'erreur de la commande
+en boucle ouverte : le bras s'arrête et attend d'être à 0,1° près sur chaque axe
+avant de repartir.
+
+```python
+t_hold = self.supervisor.getTime()
+while self.supervisor.getTime() - t_hold < 3.0:
+    self.supervisor.step(self.timestep)
+    ecart = np.max(np.abs(np.array(target) - self.get_joint_angles()))
+    if ecart < 0.002:              # ~0.1 degre sur chaque axe
+        break
+```
+
+Total du scénario : ~30 s **simulées**. Pour accélérer, deux leviers :
+
+```python
+ur5.move_to_pose([...], duration=1.5)      # forcer une duree courte
+```
+
+ou modifier le facteur `4 / (0.5 * PI)`. Attention : la vitesse est plafonnée à
+3,14 rad/s par les moteurs, et trop raccourcir ferait décrocher la trajectoire.
+Et rappelons que Webots affiche le temps **simulé** : en mode « Fast », tout se
+déroule bien plus vite en temps réel.
+
+---
+
+### 21.3 Le problème que le PINN résout
+
+Trouver les 6 angles articulaires `(q1 … q6)` qui amènent la pince à une
+position `(x, y, z)` : c'est la **cinématique inverse**.
+
+Le sens facile — angles → position — s'appelle la cinématique **directe**, et ce
+n'est qu'un produit de matrices. Le sens inverse est le difficile : plusieurs
+solutions, des singularités, et pas de formule générale pour un bras quelconque.
+
+**Fichiers concernés :**
+
+| Fichier | Rôle |
+| :-- | :-- |
+| `training/train_pinn_6dof.py` | définit la classe `PINN6DOF` (l'architecture) |
+| `robotics_utils/ur5_pytorch_fk.py` | la cinématique directe **dérivable** |
+| `training/train_true_pinn.py` | **le script d'entraînement** |
+| `models/pinn_model_true_physics.pth` | les poids entraînés |
+
+### 21.4 Étape 1 — L'architecture
+
+`training/train_pinn_6dof.py:26`
+
+```python
+class PINN6DOF(nn.Module):
+    def __init__(self, input_dim=3, output_dim=6, hidden_dim=512):
+        self.net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),  nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.SiLU(),
+            nn.Linear(hidden_dim, hidden_dim), nn.SiLU(),
+            nn.Linear(hidden_dim, output_dim),
+        )
+        self.register_buffer("mean_in",  torch.zeros(input_dim))
+        self.register_buffer("std_in",   torch.ones(input_dim))
+        self.register_buffer("mean_out", torch.zeros(output_dim))
+        self.register_buffer("std_out",  torch.ones(output_dim))
+```
+
+```
+Entree (3)  ->  Linear -> SiLU -> Linear -> SiLU -> Linear -> SiLU -> Linear  ->  Sortie (6)
+  (x,y,z)                    [512 neurones par couche]                            (q1..q6)
+```
+
+Environ **530 000 paramètres**. C'est petit : le but est un passage avant en une
+fraction de milliseconde, pas la capacité maximale.
+
+**Pourquoi SiLU et pas ReLU ?** C'est le point clé de l'architecture.
+`SiLU(x) = x·sigmoid(x)` est **lisse et infiniment dérivable**, alors que ReLU a
+une cassure en zéro et une dérivée seconde nulle partout ailleurs. Or le
+gradient va devoir traverser des `sin` et `cos` dans la perte physique : une
+non-linéarité cassée y injecterait des à-coups.
+
+**Pourquoi la normalisation est dans le modèle ?** Les entrées sont des mètres
+(`~0,3`), les sorties des radians (`~±3`). Sans normalisation, le problème est
+mal conditionné. En stockant `mean_in/std_in/mean_out/std_out` comme
+**buffers**, ils sont sauvegardés dans le `.pth` et rechargés avec les poids :
+`ur5.py` n'a rien à savoir de la normalisation, il appelle `model(xyz)` et
+reçoit des radians.
+
+### 21.5 Étape 2 — Fabriquer les données
+
+`training/train_true_pinn.py:40`
+
+```python
+xs = np.random.uniform( 0.0,  0.4, num_samples)
+ys = np.random.uniform(-0.9, -0.5, num_samples)
+zs = np.random.uniform(0.05, 0.45, num_samples)
+
+for t in targets:
+    T = build_matrix(t, [math.pi, 0, -math.pi/2], euler='XYZ')
+    q_sol = inverse_kinematics(T, wrist='up', shoulder='left', elbow='up')
+    if not np.any(np.isnan(q_sol)):
+        valid_targets.append(t)
+        valid_q.append(q_sol)
+```
+
+25 000 positions tirées au hasard dans la zone de la table. Pour chacune, on
+demande la solution au **solveur analytique exact** de `ur5.py`, en imposant
+l'orientation « pince vers le bas » `[pi, 0, -pi/2]`.
+
+**Le forçage de branche est essentiel — c'est le piège n°1 du sujet.**
+Il existe jusqu'à **8 solutions** pour une même position (épaule gauche/droite ×
+coude haut/bas × poignet haut/bas). Si on mélangeait les branches dans le jeu de
+données, le réseau — qui est une fonction, donc renvoie **une** valeur par
+entrée — apprendrait leur **moyenne**. Or la moyenne de deux configurations
+valides n'est solution d'**aucune** des deux : le bras arriverait n'importe où.
+On n'enseigne donc qu'une seule famille, `wrist='up', shoulder='left',
+elbow='up'`, cohérente et sans collision avec la table.
+
+Résultat mesuré : **20 024 échantillons valides sur 25 000**. Les autres sont
+hors d'atteinte pour cette branche et sont rejetés (`NaN`). Découpage 90 / 10 en
+apprentissage / validation, lots de 256.
+
+> Note : le script commence par **simuler le module `controller` de Webots**
+> (`train_true_pinn.py:12`) pour pouvoir importer `ur5.py` hors de Webots. C'est
+> un `sys.modules['controller'] = ...` de trois lignes ; sans lui, l'import
+> échoue et on ne peut pas réutiliser le solveur analytique du projet.
+
+### 21.6 Étape 3 — La cinématique directe **en PyTorch**
+
+`robotics_utils/ur5_pytorch_fk.py` — **c'est ce fichier qui rend le projet
+« physics-informed ».**
+
+La cinématique directe existait déjà en numpy. Mais numpy n'est **pas
+dérivable** : impossible d'y faire remonter un gradient. En la réécrivant avec
+des opérations `torch` — les mêmes paramètres de Denavit-Hartenberg, les mêmes
+`sin`/`cos` — elle devient un **maillon dérivable** de la chaîne de calcul.
+
+```python
+self.d1 = 0.1625;  self.a2 = 0.425;   self.a3 = 0.3922
+self.d4 = 0.1333;  self.d5 = 0.0997;  self.d6 = 0.0996 + 0.1237
+
+def forward(self, joint_angles):            # (B, 6) -> (B, 4, 4)
+    T_total = torch.eye(4).unsqueeze(0).repeat(batch_size, 1, 1)
+    for i in range(6):
+        a, alpha, d, theta_offset = self.dh_params[i]
+        T_i = self.get_transform_matrix(joint_angles[:, i], a, alpha, d, theta_offset)
+        T_total = torch.bmm(T_total, T_i)
+    return T_total
+```
+
+Deux détails qui comptent :
+
+- **tout est en lots** (`torch.bmm`, matrices `(B,4,4)`) : les 256 échantillons
+  du lot traversent le robot en une seule opération, sinon l'entraînement serait
+  des centaines de fois plus lent ;
+- **les paramètres DH sont exactement ceux de `ur5.py`**. S'ils divergeaient, le
+  réseau apprendrait à être précis sur un robot qui n'est pas celui de la
+  simulation — et l'erreur ne serait visible que dans Webots.
+
+Le gradient peut alors traverser **la géométrie du robot**. C'est toute la
+différence.
+
+### 21.7 Étape 4 — La perte hybride
+
+`training/train_true_pinn.py:119`
+
+```python
+for bx, by in train_loader:
+    optimizer.zero_grad()
+
+    # 1. L'IA devine les 6 angles
+    pred_q = model(bx)
+
+    # 2. SUPERVISION LEGERE : aide a rester sur la bonne branche
+    loss_data = mse(pred_q, by)
+
+    # 3. VERITABLE PINN : on passe les angles dans la cinematique directe
+    T_pred = fk_engine.forward(pred_q)
+    T_ref  = fk_engine.forward(by)
+
+    loss_pos = mse(T_pred[:, :3, 3],  bx)                     # 3a. position
+    loss_rot = mse(T_pred[:, :3, :3], T_ref[:, :3, :3])       # 3b. orientation
+    loss_phys = loss_pos + (R_OUTIL ** 2) * loss_rot          # 3c. homogeneisation
+
+    # 4. Perte totale
+    loss = 0.1 * loss_data + 1.0 * loss_phys
+
+    loss.backward()
+    optimizer.step()
+```
+
+**La différence fondamentale avec un réseau supervisé classique.** Un réseau
+ordinaire dirait seulement : « tes angles doivent ressembler aux angles de
+référence ». Il ne saurait pas ce qu'est un robot, et une petite erreur sur `q2`
+compterait autant qu'une petite erreur sur `q6` — alors que la première déplace
+la main de plusieurs centimètres et la seconde d'un cheveu.
+
+Ici, on **fait passer les angles proposés dans la physique du robot** et on
+regarde où la main arrive **réellement**. Le réseau est corrigé sur son
+**résultat physique**, pas sur sa ressemblance à une réponse toute faite. C'est
+littéralement **l'erreur en millimètres qui est optimisée**.
+
+**La pondération 0,1 / 1,0.** `w_data = 0,1` n'est qu'un garde-fou : il empêche
+le réseau de dériver vers une autre branche de solution, ce que la perte
+physique seule autoriserait puisque les 8 branches atteignent la même position.
+`w_phys = 1,0` porte la précision réelle.
+
+**Le terme d'orientation (ajouté après coup).** Sans lui, la perte est
+**aveugle à l'orientation** : faire tourner `q6` de 180° ne déplace le point
+d'aucun micron mais retourne la pince — et les deux poses obtiennent exactement
+le même score. Trois choix de mise en œuvre :
+
+1. **Comparer à `FK(référence)`** plutôt qu'à une matrice reconstruite par
+   `build_matrix` : les deux passent par la **même** cinématique directe, donc
+   aucune convention d'angles d'Euler ne peut fausser la comparaison.
+2. **Norme de Frobenius, pas distance géodésique** : celle-ci ferait intervenir
+   un `arccos` dont le gradient **diverge près de zéro** — c'est-à-dire
+   exactement là où le réseau doit converger.
+3. **Pondération par `R_OUTIL² = 0,05²`** : une erreur de position est en mètres
+   carrés, une erreur de rotation est sans dimension. On convertit la seconde en
+   déplacement équivalent **au bord de l'outil** (5 cm, l'ordre de grandeur de
+   la pince). Une rotation de 1° y pèse alors autant qu'un déplacement de
+   0,9 mm — ce qui correspond à son effet réel sur la saisie.
+
+### 21.8 Étape 5 — La boucle d'entraînement
+
+```python
+optimizer = optim.Adam(model.parameters(), lr=1e-3)
+epochs = 100
+
+if epoch == 30: lr = 5e-4
+if epoch == 60: lr = 1e-4
+if epoch == 80: lr = 2e-5
+
+if dist_err_mm < best_err:              # sauvegarde uniquement si amelioration
+    best_err = dist_err_mm
+    model.save_model(model_path("pinn_model_true_physics.pth"))
+```
+
+- **Adam**, 100 époques, lots de 256 — environ 7 000 pas de gradient ;
+- **décroissance manuelle du pas** par paliers : `1e-3 → 5e-4` à l'époque 30,
+  `1e-4` à 60, `2e-5` à 80. Le pas initial explore, les derniers affinent le
+  dernier dixième de millimètre ;
+- **sauvegarde uniquement sur amélioration**, donc le `.pth` final est le
+  meilleur modèle vu, pas le dernier ;
+- graines fixées (`seed=42`) pour que l'entraînement soit reproductible ;
+- **entraînement sur CPU**, en quelques minutes : le réseau est petit et la FK
+  vectorisée. Pas besoin de GPU.
+
+**La validation mesure les deux erreurs**, en unités physiques et non en perte
+abstraite :
+
+```python
+dist_err_mm = torch.mean(torch.norm(T_val[:, :3, 3] - X_val_t, dim=1)) * 1000.0
+
+R_res = torch.bmm(T_ref_val[:, :3, :3].transpose(1, 2), T_val[:, :3, :3])
+cos = ((R_res[:, 0, 0] + R_res[:, 1, 1] + R_res[:, 2, 2]) - 1.0) / 2.0
+rot_err_deg = torch.rad2deg(torch.acos(cos.clamp(-1.0, 1.0))).mean()
+```
+
+L'`arccos` est ici permis : c'est une **mesure**, pas une perte, son gradient
+n'a aucune importance. `clamp(-1, 1)` protège des dépassements numériques.
+
+### 21.9 La convergence, telle que mesurée
+
+```
+Ep 001/100 | Position:  4,149 mm | Orientation: 0,384 deg
+Ep 034/100 | Position:  0,489 mm | Orientation: 0,037 deg
+Ep 099/100 | Position:  0,185 mm | Orientation: 0,008 deg
+```
+
+| Grandeur | Valeur finale |
+| :-- | ---: |
+| Erreur de position (validation) | **0,185 mm** |
+| Erreur d'orientation (validation) | **0,009°** |
+| Erreur **mesurée dans Webots** au point de saisie | **0,32 mm** |
+
+Le dernier chiffre est le seul qui compte vraiment : il est obtenu en allant à
+la même cible avec l'IK analytique puis avec le PINN, et en comparant les poses
+**réellement atteintes** (voir `mesurer_erreur_pinn()` dans le contrôleur). Il
+inclut donc le modèle DH, l'asservissement des moteurs et la physique — pas
+seulement la cohérence interne du réseau.
+
+### 21.10 Les limites, honnêtement
+
+- **Le réseau extrapole mal hors de sa zone d'entraînement.** Au-dessus du bac
+  (`x = -0,20` pour une plage apprise `[0 ; 0,4]`), l'erreur monte à 7-11 mm.
+  Sans conséquence pour lâcher un cube dans un plateau, mais à savoir.
+- **Une seule orientation apprise** (`[pi, 0, -pi/2]`, pince vers le bas). Le
+  réseau ne sait pas saisir de côté ; il faudrait ajouter l'orientation aux
+  entrées et re-générer le jeu de données.
+- **Une seule branche de solution.** Le réseau ne peut pas contourner un
+  obstacle en passant par le coude bas.
+- **Il n'est pas plus rapide que la forme fermée** : 0,248 ms contre 0,223 ms,
+  soit 11 % plus lent. Voir le chapitre 20. Ce qu'il apporte, c'est d'être
+  **182x plus rapide qu'IKPY**, **différentiable**, et **continu** en fonction
+  de la cible.
+- **La zone en `z` commence à 0,05** alors que la saisie se fait à `0,030`. Le
+  point est 20 mm sous la plage apprise ; l'erreur reste à 0,30 mm, donc ce
+  n'est pas urgent, mais ré-entraîner sur `z` dans `[0,02 ; 0,45]` serait plus
+  propre.
+
+### 21.11 Ré-entraîner
+
+```bash
+python training/train_true_pinn.py
+```
+
+Quelques minutes sur CPU. Le fichier `models/pinn_model_true_physics.pth` est
+écrasé dès qu'une époque améliore l'erreur de position.
+
+### 21.12 À retenir en une phrase
+
+> Le réseau n'apprend pas à recopier des réponses. Il apprend en **regardant où
+> sa main atterrit**, à travers une cinématique directe rendue dérivable — c'est
+> ce qui le rend « informé par la physique ».
