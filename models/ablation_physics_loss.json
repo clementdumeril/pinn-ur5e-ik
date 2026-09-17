@@ -1,0 +1,73 @@
+{
+  "n_cibles": 20201,
+  "epoques": 100,
+  "branches_moyennes_par_cible": 2.723231523191921,
+  "resultats": [
+    {
+      "nom": "branche unique | w_phys=0",
+      "w_phys": 0.0,
+      "best_pos_mm": 0.2376842312514782,
+      "best_rot_deg": 0.012105581350624561,
+      "best_epoch": 89,
+      "final_pos_mm": 0.2512725186534226,
+      "final_rot_deg": 0.011603704653680325,
+      "secondes": 523.3,
+      "branche": "branche unique"
+    },
+    {
+      "nom": "branche unique | w_phys=1",
+      "w_phys": 1.0,
+      "best_pos_mm": 0.18716944032348692,
+      "best_rot_deg": 0.010797621682286263,
+      "best_epoch": 87,
+      "final_pos_mm": 0.19251889898441732,
+      "final_rot_deg": 0.009781558997929096,
+      "secondes": 734.6,
+      "branche": "branche unique"
+    },
+    {
+      "nom": "branche unique | w_phys=20",
+      "w_phys": 20.0,
+      "best_pos_mm": 0.1800068566808477,
+      "best_rot_deg": 0.04396079108119011,
+      "best_epoch": 96,
+      "final_pos_mm": 0.18726153939496726,
+      "final_rot_deg": 0.04419497400522232,
+      "secondes": 512.7,
+      "branche": "branche unique"
+    },
+    {
+      "nom": "8 branches melangees | w_phys=0",
+      "w_phys": 0.0,
+      "best_pos_mm": 911.064088344574,
+      "best_rot_deg": 99.00653076171875,
+      "best_epoch": 7,
+      "final_pos_mm": 913.5702252388,
+      "final_rot_deg": 100.89471435546875,
+      "secondes": 199.6,
+      "branche": "8 branches melangees"
+    },
+    {
+      "nom": "8 branches melangees | w_phys=1",
+      "w_phys": 1.0,
+      "best_pos_mm": 69.57118213176727,
+      "best_rot_deg": 98.59090423583984,
+      "best_epoch": 1,
+      "final_pos_mm": 130.0988495349884,
+      "final_rot_deg": 104.59659576416016,
+      "secondes": 261.6,
+      "branche": "8 branches melangees"
+    },
+    {
+      "nom": "8 branches melangees | w_phys=20",
+      "w_phys": 20.0,
+      "best_pos_mm": 3.6838820669800043,
+      "best_rot_deg": 71.63501739501953,
+      "best_epoch": 55,
+      "final_pos_mm": 9.159739129245281,
+      "final_rot_deg": 71.48281860351562,
+      "secondes": 234.5,
+      "branche": "8 branches melangees"
+    }
+  ]
+}

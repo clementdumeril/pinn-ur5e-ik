@@ -1690,13 +1690,19 @@ Ep 099/100 | Position:  0,185 mm | Orientation: 0,008 deg
 | :-- | ---: |
 | Erreur de position (validation) | **0,185 mm** |
 | Erreur d'orientation (validation) | **0,009°** |
-| Erreur **mesurée dans Webots** au point de saisie | **0,32 mm** |
+| Erreur **mesurée dans Webots** au point de saisie | **0,30 mm** |
 
 Le dernier chiffre est le seul qui compte vraiment : il est obtenu en allant à
 la même cible avec l'IK analytique puis avec le PINN, et en comparant les poses
 **réellement atteintes** (voir `mesurer_erreur_pinn()` dans le contrôleur). Il
 inclut donc le modèle DH, l'asservissement des moteurs et la physique — pas
 seulement la cohérence interne du réseau.
+
+> **Précision de périmètre.** Cette campagne Webots a été menée **avant** l'ajout
+> du terme d'orientation. Les 0,30 mm valent donc pour le modèle précédent ; le
+> modèle actuel est meilleur en validation (0,185 mm contre 0,30 mm auparavant),
+> mais sa mesure dans Webots reste à refaire. Ne pas annoncer 0,30 mm comme le
+> chiffre du modèle actuel.
 
 ### 21.10 Les limites, honnêtement
 
@@ -1731,3 +1737,109 @@ Quelques minutes sur CPU. Le fichier `models/pinn_model_true_physics.pth` est
 > Le réseau n'apprend pas à recopier des réponses. Il apprend en **regardant où
 > sa main atterrit**, à travers une cinématique directe rendue dérivable — c'est
 > ce qui le rend « informé par la physique ».
+
+---
+
+## 22. 🔬 L'ablation : la perte physique sert-elle vraiment ?
+
+Le README affirmait ceci :
+
+> *« Un réseau supervisé classique moyenne les 8 solutions et produit des
+> configurations articulaires invalides. Notre PINN lève cette ambiguïté. »*
+
+**Cette affirmation n'était pas testée par l'expérience.** Les deux générateurs
+de données du projet filtrent sur une seule famille de solutions *avant*
+l'entraînement (`train_true_pinn.py:57`, `train_supervised_ik.py:58`). Il n'y
+avait donc jamais rien à moyenner : l'ambiguïté était supprimée par la
+**génération des données**, pas par la perte physique.
+
+Ce n'est pas une faute de conception — forcer le coude en l'air pour éviter la
+table est le bon choix d'ingénieur. C'est une faute de **rédaction** : on
+attribuait à la perte un mérite que le code rendait impossible à démontrer.
+
+### 22.1 Le plan d'expérience
+
+[training/ablation_physics_loss.py](training/ablation_physics_loss.py), plan
+2 × 3. Tout est tenu constant — même graine, mêmes 20 201 cibles, même
+architecture, mêmes 100 époques, même planning de pas, même critère de
+sélection. Seules deux choses varient :
+
+```
+branche ∈ {une seule famille, les 8 mélangées}
+w_phys  ∈ {0 (supervisé pur), 1 (le dépôt), 20 (physique dominante)}
+```
+
+### 22.2 Le bug que la vérification intégrée a attrapé
+
+Avant d'entraîner quoi que ce soit, le script vérifie que les branches
+atteignent réellement la cible. **Elles ne le faisaient pas.**
+
+`inverse_kinematics` renvoie pour certaines combinaisons des angles **finis mais
+faux** — jusqu'à **784 mm** de la cible. Filtrer sur `NaN`, comme le faisaient
+les générateurs existants, ne suffit pas.
+
+```python
+# Ne PAS se fier a l'absence de NaN : on verifie chaque branche par
+# cinematique directe -- c'est la definition meme d'une solution.
+p = fk_check.forward_pos(torch.tensor(q).unsqueeze(0))[0]
+if torch.norm(p - torch.tensor(t)).item() > 1e-4:
+    continue
+```
+
+Après ce filtre, contrôle final sur 584 paires de branches :
+
+| Écart entre branches d'une même cible | Maximum |
+| :-- | ---: |
+| Position | 0,0003 mm |
+| Orientation | 0,04° |
+
+Les branches atteignent donc bien la **même pose complète** : les deux lignes du
+tableau ci-dessous ne diffèrent que par la configuration articulaire, pas par la
+tâche. Sans ce garde-fou, l'ablation aurait produit des chiffres élégants et
+dénués de sens.
+
+### 22.3 Les résultats
+
+| Données d'entraînement | `w_phys=0` | `w_phys=1` | `w_phys=20` |
+| :-- | ---: | ---: | ---: |
+| **Une seule branche** (ce que le dépôt livre) | 0,238 mm / 0,012° | **0,187 mm / 0,011°** | 0,180 mm / 0,044° |
+| **8 branches mélangées** | 911 mm / 99,0° | 69,6 mm / 98,6° | 3,68 mm / 71,6° |
+
+### 22.4 Ce qu'il faut en conclure
+
+**1. Sur les données réellement utilisées, la physique vaut 21 %.**
+0,238 mm → 0,187 mm. Réel, reproductible, et beaucoup plus modeste que
+« configurations invalides ». À noter aussi : `w_phys=20` gagne 0,007 mm de
+position au prix d'une orientation **4× pire**. C'est ce qui justifie
+rétrospectivement le `w_phys=1` du dépôt.
+
+**2. La prémisse était juste, mais n'a jamais été la situation de ce projet.**
+Entraîné sur branches mélangées, le réseau supervisé s'effondre bien à
+**911 mm** : il prédit la configuration moyenne, qui n'atteint rien. Cet échec
+est réel. Il n'est simplement pas celui que ce projet évite, puisque la branche
+unique est imposée par le **générateur**, pas par la perte.
+
+**3. La perte physique atténue l'ambiguïté, elle ne la lève pas.**
+À `w_phys=1`, le modèle sur branches mélangées ne progresse jamais au-delà de sa
+première époque (69,6 mm). À `w_phys=20` il descend à 3,68 mm — 250× mieux que
+le supervisé, mais encore 20× pire que le modèle à branche unique, et avec
+71,6° d'erreur d'orientation, donc inutilisable pour saisir.
+
+### 22.5 La leçon d'ingénierie
+
+> Contraindre le jeu de données à une seule famille de solutions est **ce qui
+> rend le problème traitable**. La perte physique apporte ensuite 21 % de
+> précision et une orientation bien tenue. Les deux comptent, et aucune ne
+> remplace l'autre.
+
+C'est une affirmation plus faible que celle du README d'origine — et
+infiniment plus solide, parce qu'elle est mesurée.
+
+### 22.6 Rejouer
+
+```bash
+python training/ablation_physics_loss.py
+```
+
+Environ 1 h sur CPU (11 min de génération, 6 entraînements). Les résultats bruts
+sont écrits dans `models/ablation_physics_loss.json`.
